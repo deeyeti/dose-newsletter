@@ -9,12 +9,36 @@ import { env } from "@/lib/env";
 import { getFrameFile } from "@/lib/adapters/frameio";
 import { transcribeWithGroq } from "@/lib/adapters/groq";
 import { writeNewsletter } from "@/lib/adapters/claude";
+import fsSync from "node:fs";
 import { rejectLongVideo } from "@/lib/guards";
 
 const exec = promisify(execFile);
 const SAMPLE_TRANSCRIPT = "I grew up watching my grandmother repair clothes at the kitchen table. She never called it sustainability. She just said, if something still has life in it, why throw it away? Years later, I began mending my friends' jackets after work. People would tell me about the places those clothes had been. That is when I understood I was not only fixing fabric; I was helping people hold on to a memory.";
 
+function ensureMediaToolsOnPath() {
+  if (process.platform === "win32") {
+    const wingetBase = path.join(os.homedir(), "AppData", "Local", "Microsoft", "WinGet", "Packages");
+    if (fsSync.existsSync(wingetBase)) {
+      try {
+        const matches = fsSync.readdirSync(wingetBase).filter((d) => d.startsWith("Gyan.FFmpeg"));
+        for (const match of matches) {
+          const fullBuild = path.join(wingetBase, match);
+          const inner = fsSync.readdirSync(fullBuild).find((d) => d.startsWith("ffmpeg-"));
+          if (inner) {
+            const bin = path.join(fullBuild, inner, "bin");
+            if (fsSync.existsSync(path.join(bin, "ffmpeg.exe")) && !process.env.PATH?.includes(bin)) {
+              process.env.PATH = `${bin};${process.env.PATH || ""}`;
+              break;
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+}
+
 async function mediaTools() {
+  ensureMediaToolsOnPath();
   try { await Promise.all([exec("ffprobe", ["-version"]), exec("ffmpeg", ["-version"])]); } catch { throw new Error("FFmpeg and FFprobe are required for live video processing. Install FFmpeg and make both commands available on PATH."); }
 }
 async function duration(file: string) { const { stdout } = await exec("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file]); const seconds = Number.parseFloat(stdout); if (!Number.isFinite(seconds)) throw new Error("Could not determine video duration with FFprobe."); return seconds; }
