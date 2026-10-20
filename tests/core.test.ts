@@ -40,8 +40,8 @@ test("Groq failures are actionable", async () => {
 });
 
 test("missing Claude model fails before an invalid draft can be persisted", async () => {
-  process.env.claude_api_key = "key"; delete process.env.CLAUDE_MODEL;
-  await assert.rejects(() => writeNewsletter("Valid transcript"), /CLAUDE_MODEL is required/); delete process.env.claude_api_key;
+  process.env.claude_api_key = "key"; process.env.CLAUDE_MODEL = "";
+  await assert.rejects(() => writeNewsletter("Valid transcript"), /CLAUDE_MODEL is required/); delete process.env.claude_api_key; delete process.env.CLAUDE_MODEL;
 });
 
 test("email failure remains retryable and repeated send is locked", async () => {

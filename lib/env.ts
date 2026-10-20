@@ -11,8 +11,9 @@ function localEnv(): Record<string, string> {
 }
 
 export const env = (key: string) => {
+  if (process.env[key] !== undefined) return process.env[key]!;
   const fallback = localEnv();
-  return process.env[key] || fallback[key] || fallback[key.toLowerCase()] || "";
+  return fallback[key] || fallback[key.toLowerCase()] || "";
 };
 export const configured = (key: string) => Boolean(env(key));
 

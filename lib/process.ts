@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { store } from "@/lib/db";
+import { env } from "@/lib/env";
 import { getFrameFile } from "@/lib/adapters/frameio";
 import { transcribeWithGroq } from "@/lib/adapters/groq";
 import { writeNewsletter } from "@/lib/adapters/claude";
@@ -24,7 +25,7 @@ export async function processSample(jobId: string) {
   store.setJob(jobId, "transcribing", { durationSeconds: 42 });
   store.setTranscript(jobId, SAMPLE_TRANSCRIPT, "sample transcript", "en");
   store.setJob(jobId, "drafting");
-  store.saveDraft(jobId, { subject: "What we choose to hold on to", previewText: "A small act of repair can carry a much larger story.", headline: "The life still left in a jacket", body: "She grew up watching her grandmother repair clothes at the kitchen table. It was never presented as a statement. Just a simple question: if something still has life in it, why throw it away?\n\nYears later, mending friends’ jackets after work became its own kind of listening. Every tear came with a place, a season, or a person attached to it. The work was not only about fabric. It was about making room for a memory to stay with someone a little longer.", closing: "This is labelled sample content — it was not fetched from Frame.io or transcribed by Groq." });
+  store.saveDraft(jobId, { subject: "What we choose to hold on to", previewText: "A small act of repair can carry a much larger story.", headline: "The life still left in a jacket", body: "She grew up watching her grandmother repair clothes at the kitchen table. It was never presented as a statement. Just a simple question: if something still has life in it, why throw it away?\n\nYears later, mending friends’ jackets after work became its own kind of listening. Every tear came with a place, a season, or a person attached to it. The work was not only about fabric. It was about making room for a memory to stay with someone a little longer.", closing: "This is labelled sample content — it was not fetched from Frame.io or transcribed by Groq.", recipientEmail: env("DEMO_RECIPIENT_EMAIL") || undefined });
   store.setJob(jobId, "ready_for_review");
 }
 
@@ -45,7 +46,7 @@ export async function processLiveJob(jobId: string) {
     rejectLongVideo(seconds);
     const audio = path.join(temporary, "audio.flac"); await extractAudio(source, audio);
     store.setJob(jobId, "transcribing"); const transcript = await transcribeWithGroq(audio); store.setTranscript(jobId, transcript.text, transcript.model, transcript.language);
-    store.setJob(jobId, "drafting"); const draft = await writeNewsletter(transcript.text); store.saveDraft(jobId, { ...draft });
+    store.setJob(jobId, "drafting"); const draft = await writeNewsletter(transcript.text); store.saveDraft(jobId, { ...draft, recipientEmail: env("DEMO_RECIPIENT_EMAIL") || undefined });
     store.setJob(jobId, "ready_for_review");
   } catch (error) { const message = error instanceof Error ? error.message : "Unexpected processing error."; store.fail(jobId, /90 seconds/.test(message) ? "DURATION_LIMIT" : "PROCESSING_FAILED", message); }
   finally { await fs.rm(temporary, { recursive: true, force: true }); }
