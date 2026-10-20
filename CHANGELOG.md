@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-10-20
+
+### Added
+- **Automated WinGet Media Tools Detection**:
+  - Added dynamic fallback path resolution for `ffmpeg` and `ffprobe` under Windows WinGet package directories, allowing child processes to locate binaries without requiring a system restart.
+- **Recipient Email Auto-population**:
+  - Automatically pre-populates `DEMO_RECIPIENT_EMAIL` from environment configurations into newly created newsletter drafts (for both sample workflows and live Frame.io videos).
+- **Ngrok Dev Origin Support**:
+  - Configured `allowedDevOrigins` in `next.config.ts` for ngrok domains (`*.ngrok-free.dev`, `*.ngrok-free.app`) to support seamless local development tunneling.
+
+### Changed
+- **Editorial Send UX**:
+  - Updated dashboard send flow to automatically synchronize and persist un-saved draft edits and recipient email inputs prior to dispatching confirmation requests to `/api/jobs/[id]/send`.
+- **Environment Priority**:
+  - Ensured explicit `process.env` overrides fallback `local.env` variables cleanly in runtime configuration.
+
+### Fixed
+- Isolated test suite execution for missing Claude model verification against local environment configurations.
+
 ## [0.1.0] - 2026-10-20
 
 ### Added
