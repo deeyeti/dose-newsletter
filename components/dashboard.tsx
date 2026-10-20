@@ -28,12 +28,15 @@ export function Dashboard() {
 
 function JobPanel({ detail, close, refresh, setNotice }: { detail: Detail; close: () => void; refresh: () => void; setNotice: (value: string) => void }) {
   const [draft, setDraft] = useState<Draft | null>(detail.draft), [saving, setSaving] = useState(false), [confirming, setConfirming] = useState(false);
+  const [prevDraft, setPrevDraft] = useState<Draft | null>(detail.draft);
+  if (detail.draft !== prevDraft) {
+    setPrevDraft(detail.draft);
+    setDraft(detail.draft);
+  }
   const [viewMode, setViewMode] = useState<"editor" | "preview">("editor");
   const [coEditorWorking, setCoEditorWorking] = useState<string | null>(null);
   const [angles, setAngles] = useState<Array<{ angle: string; subject: string; headline: string }> | null>(null);
   const [factCheck, setFactCheck] = useState<{ score: number; allGrounded: boolean; items: Array<{ statement: string; isGrounded: boolean; transcriptEvidence?: string }> } | null>(null);
-
-  useEffect(() => { setDraft(detail.draft); }, [detail.draft]);
 
   const set = (key: keyof Draft, value: string) => setDraft((current) => current ? { ...current, [key]: value } : current);
   async function save() { if (!draft) return; setSaving(true); const response = await fetch(`/api/jobs/${detail.job.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) }); const data = await response.json(); setSaving(false); if (data.error) setNotice(data.error); else { setDraft(data.draft); setNotice("Draft saved."); refresh(); } }
@@ -141,7 +144,7 @@ function JobPanel({ detail, close, refresh, setNotice }: { detail: Detail; close
         <div style={{ maxHeight: "200px", overflowY: "auto" }}>
           {factCheck.items.map((item, idx) => <div key={idx} className="factcheck-item">
             <span>{item.isGrounded ? "✅ Grounded:" : "⚠️ Needs check:"} {item.statement}</span>
-            {item.transcriptEvidence && <code>Transcript quote: "{item.transcriptEvidence}"</code>}
+            {item.transcriptEvidence && <code>Transcript quote: &ldquo;{item.transcriptEvidence}&rdquo;</code>}
           </div>)}
         </div>
       </div>}
