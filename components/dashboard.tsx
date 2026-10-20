@@ -28,20 +28,166 @@ export function Dashboard() {
 
 function JobPanel({ detail, close, refresh, setNotice }: { detail: Detail; close: () => void; refresh: () => void; setNotice: (value: string) => void }) {
   const [draft, setDraft] = useState<Draft | null>(detail.draft), [saving, setSaving] = useState(false), [confirming, setConfirming] = useState(false);
+  const [viewMode, setViewMode] = useState<"editor" | "preview">("editor");
+  const [coEditorWorking, setCoEditorWorking] = useState<string | null>(null);
+  const [angles, setAngles] = useState<Array<{ angle: string; subject: string; headline: string }> | null>(null);
+  const [factCheck, setFactCheck] = useState<{ score: number; allGrounded: boolean; items: Array<{ statement: string; isGrounded: boolean; transcriptEvidence?: string }> } | null>(null);
+
+  useEffect(() => { setDraft(detail.draft); }, [detail.draft]);
+
   const set = (key: keyof Draft, value: string) => setDraft((current) => current ? { ...current, [key]: value } : current);
   async function save() { if (!draft) return; setSaving(true); const response = await fetch(`/api/jobs/${detail.job.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) }); const data = await response.json(); setSaving(false); if (data.error) setNotice(data.error); else { setDraft(data.draft); setNotice("Draft saved."); refresh(); } }
   async function retry() { const res = await fetch(`/api/jobs/${detail.job.id}/retry`, { method: "POST" }); const data = await res.json(); setNotice(data.error || "Retry queued."); refresh(); }
   async function send() { if (draft) { await fetch(`/api/jobs/${detail.job.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) }); } const res = await fetch(`/api/jobs/${detail.job.id}/send`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirm: true }) }); const data = await res.json(); setConfirming(false); setNotice(data.error || "Email accepted by provider."); refresh(); }
+
+  async function requestHeadlines() {
+    setCoEditorWorking("Generating angles…");
+    try {
+      const res = await fetch(`/api/jobs/${detail.job.id}/editorial`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "headlines" }) });
+      const data = await res.json();
+      if (data.angles) setAngles(data.angles);
+      else setNotice(data.error || "Could not generate headline angles.");
+    } finally {
+      setCoEditorWorking(null);
+    }
+  }
+
+  async function requestTone(tone: "warmer" | "punchier" | "more_reflective") {
+    setCoEditorWorking(`Adjusting tone (${tone})…`);
+    try {
+      const res = await fetch(`/api/jobs/${detail.job.id}/editorial`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "tone", tone }) });
+      const data = await res.json();
+      if (data.draft) {
+        setDraft(data.draft);
+        setNotice(`Draft rewritten with ${tone} tone.`);
+      } else {
+        setNotice(data.error || "Could not adjust tone.");
+      }
+    } finally {
+      setCoEditorWorking(null);
+    }
+  }
+
+  async function requestFactCheck() {
+    setCoEditorWorking("Verifying grounding against transcript…");
+    try {
+      const res = await fetch(`/api/jobs/${detail.job.id}/editorial`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "factcheck" }) });
+      const data = await res.json();
+      if (data.check) setFactCheck(data.check);
+      else setNotice(data.error || "Grounding check failed.");
+    } finally {
+      setCoEditorWorking(null);
+    }
+  }
+
+  function applyHeadline(angle: { subject: string; headline: string }) {
+    setDraft(current => current ? { ...current, subject: angle.subject, headline: angle.headline } : current);
+    setAngles(null);
+    setNotice("Headline & subject updated.");
+  }
+
   return <aside className="drawer" aria-label="Job detail"><div className="drawer-head"><div><p className="eyebrow">Job detail</p><h2>{detail.job.filename}</h2></div><button className="close" onClick={close} aria-label="Close job detail">×</button></div>
     <div className="progress">{["received", "downloading", "transcribing", "drafting", "ready_for_review", "sending", "sent"].map((step) => <span className={detail.job.status === step ? "current" : ""} key={step}>{statusLabel(step)}</span>)}</div>
     {detail.job.isSample && <p className="sample-callout">Sample mode only — this draft was not created from a real Frame.io fetch, Groq transcription, or sent email.</p>}
     {detail.job.errorMessage && <div className="error"><strong>Action needed</strong><p>{detail.job.errorMessage}</p><button className="button ghost" onClick={() => void retry()}>Retry processing</button></div>}
     <div className="source-meta"><span>Asset ID <b>{detail.job.id.slice(0, 8)}…</b></span><span>Duration <b>{detail.job.durationSeconds ? `${Math.round(detail.job.durationSeconds)} seconds` : "pending"}</b></span><span>Status <b>{statusLabel(detail.job.status)}</b></span></div>
     {detail.transcript && <section className="transcript"><p className="eyebrow">Groq transcript</p><p>{detail.transcript.text}</p></section>}
-    {draft ? <section className="editor"><div className="section-title"><div><p className="eyebrow">Human approval required</p><h3>Newsletter draft</h3></div><span className={`pill ${draft.status}`}>{draft.status}</span></div><label>Subject<input value={draft.subject} onChange={(e) => set("subject", e.target.value)} /></label><label>Preview text<input value={draft.previewText} onChange={(e) => set("previewText", e.target.value)} /></label><label>Headline<input value={draft.headline} onChange={(e) => set("headline", e.target.value)} /></label><label>Story body<textarea rows={10} value={draft.body} onChange={(e) => set("body", e.target.value)} /></label><label>Closing <input value={draft.closing || ""} onChange={(e) => set("closing", e.target.value)} /></label><label>Recipient email<input type="email" value={draft.recipientEmail || ""} onChange={(e) => set("recipientEmail", e.target.value)} placeholder="editor@example.com" /></label><div className="editor-actions"><button className="button ghost" disabled={saving || draft.status === "sent"} onClick={() => void save()}>{saving ? "Saving…" : "Save draft"}</button><button className="button" disabled={draft.status === "sent"} onClick={() => setConfirming(true)}>{draft.status === "sent" ? "Sent" : "Send newsletter"}</button></div>
-      <div className="email-preview"><p className="eyebrow">Email preview</p><span>Subject: {draft.subject}</span><h2>{draft.headline}</h2><p>{draft.body}</p>{draft.closing && <p>{draft.closing}</p>}</div>
+    
+    {draft ? <section className="editor">
+      <div className="section-title">
+        <div><p className="eyebrow">Human approval required</p><h3>Newsletter draft</h3></div>
+        <span className={`pill ${draft.status}`}>{draft.status}</span>
+      </div>
+
+      <div className="editorial-toolbar">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <p className="eyebrow" style={{ margin: 0 }}>AI Co-Editor Tools</p>
+          {coEditorWorking && <small style={{ color: "var(--red)", fontWeight: "bold" }}>{coEditorWorking}</small>}
+        </div>
+        <div className="editorial-actions-bar">
+          <button className="button ghost small" disabled={!!coEditorWorking} onClick={() => void requestHeadlines()}>✨ 3 Headline Angles</button>
+          <div className="tone-picker">
+            <span>Tone:</span>
+            <button className="button ghost mini" disabled={!!coEditorWorking} onClick={() => void requestTone("warmer")}>Warm</button>
+            <button className="button ghost mini" disabled={!!coEditorWorking} onClick={() => void requestTone("punchier")}>Punchy</button>
+            <button className="button ghost mini" disabled={!!coEditorWorking} onClick={() => void requestTone("more_reflective")}>Reflective</button>
+          </div>
+          <button className="button ghost small" disabled={!!coEditorWorking} onClick={() => void requestFactCheck()}>🔍 Grounding Check</button>
+        </div>
+      </div>
+
+      {angles && <div className="headline-cards">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <strong>Suggested Headline Angles</strong>
+          <button className="button ghost mini" onClick={() => setAngles(null)}>Close</button>
+        </div>
+        {angles.map((item, idx) => <div key={idx} className="headline-card">
+          <div className="headline-card-header">
+            <span className="eyebrow" style={{ margin: 0 }}>{item.angle.toUpperCase()} ANGLE</span>
+            <button className="button small" onClick={() => applyHeadline(item)}>Apply</button>
+          </div>
+          <strong>{item.headline}</strong>
+          <small>Subject: {item.subject}</small>
+        </div>)}
+      </div>}
+
+      {factCheck && <div className="factcheck-panel">
+        <div className="factcheck-header">
+          <div className={`factcheck-score ${factCheck.allGrounded ? "pass" : "review"}`}>
+            {factCheck.score}% Grounded in Interview Transcript {factCheck.allGrounded ? "✓ All statements verified" : "⚠️ Review unverified items"}
+          </div>
+          <button className="button ghost mini" onClick={() => setFactCheck(null)}>Close</button>
+        </div>
+        <div style={{ maxHeight: "200px", overflowY: "auto" }}>
+          {factCheck.items.map((item, idx) => <div key={idx} className="factcheck-item">
+            <span>{item.isGrounded ? "✅ Grounded:" : "⚠️ Needs check:"} {item.statement}</span>
+            {item.transcriptEvidence && <code>Transcript quote: "{item.transcriptEvidence}"</code>}
+          </div>)}
+        </div>
+      </div>}
+
+      <div className="view-tabs">
+        <button className={`view-tab ${viewMode === "editor" ? "active" : ""}`} onClick={() => setViewMode("editor")}>Editorial Form</button>
+        <button className={`view-tab ${viewMode === "preview" ? "active" : ""}`} onClick={() => setViewMode("preview")}>Publication Preview</button>
+      </div>
+
+      {viewMode === "editor" ? <>
+        <label>Subject<input value={draft.subject} onChange={(e) => set("subject", e.target.value)} /></label>
+        <label>Preview text<input value={draft.previewText} onChange={(e) => set("previewText", e.target.value)} /></label>
+        <label>Headline<input value={draft.headline} onChange={(e) => set("headline", e.target.value)} /></label>
+        <label>Story body<textarea rows={12} value={draft.body} onChange={(e) => set("body", e.target.value)} /></label>
+        <label>Closing & reflection<input value={draft.closing || ""} onChange={(e) => set("closing", e.target.value)} /></label>
+        <label>Recipient email<input type="email" value={draft.recipientEmail || ""} onChange={(e) => set("recipientEmail", e.target.value)} placeholder="editor@example.com" /></label>
+      </> : <div className="newsletter-artifact">
+        <div className="newsletter-masthead">
+          <h4>DOSE OF SOCIETY</h4>
+          <p>Everyday Stories • Extraordinary Humanity</p>
+        </div>
+        <div className="newsletter-meta">
+          <span>Source: {detail.job.filename}</span> • <span>Issue: #{detail.job.id.slice(0, 6)}</span>
+        </div>
+        <h1 className="newsletter-title">{draft.headline}</h1>
+        <p className="newsletter-dek">{draft.previewText}</p>
+        <div className="newsletter-body">
+          {draft.body.split("\n\n").map((para, i) => <p key={i}>{para}</p>)}
+        </div>
+        {draft.closing && <div className="newsletter-closing-card">
+          <b>Editorial Reflection & Takeaway</b>
+          <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{draft.closing}</p>
+        </div>}
+        <div className="newsletter-footer">
+          <p style={{ margin: "0 0 6px" }}>You are viewing a publication-grade preview generated by Dose Engine.</p>
+          <p style={{ margin: 0 }}>Dose of Society • Authentic voices from around the world</p>
+        </div>
+      </div>}
+
+      <div className="editor-actions">
+        <button className="button ghost" disabled={saving || draft.status === "sent"} onClick={() => void save()}>{saving ? "Saving…" : "Save draft"}</button>
+        <button className="button" disabled={draft.status === "sent"} onClick={() => setConfirming(true)}>{draft.status === "sent" ? "Sent" : "Send newsletter"}</button>
+      </div>
     </section> : <section className="waiting"><p className="eyebrow">Draft</p><h3>{detail.job.status === "failed" ? "Retry when ready" : "The editor will open when processing is complete."}</h3></section>}
     <section className="event-log"><p className="eyebrow">Event log</p>{detail.events.map((event, index) => <p key={index}><b>{statusLabel(event.status)}</b> <span>{event.message}</span></p>)}</section>
     {confirming && draft && <div className="confirm"><div><p className="eyebrow">Final confirmation</p><h3>Send this email?</h3><p>It will go to <b>{draft.recipientEmail || "no recipient"}</b> with the subject “{draft.subject}”.</p><div><button className="button ghost" onClick={() => setConfirming(false)}>Cancel</button><button className="button" onClick={() => void send()}>Confirm send</button></div></div></div>}
   </aside>;
 }
+
