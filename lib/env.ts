@@ -33,9 +33,9 @@ export function publicConfiguration() {
     groq: configured("GROQ_API_KEY"),
     claude: hasClaude || hasGemini,
     email: (configured("EMAIL_API_KEY") || configured("resend_api_key")) && configured("EMAIL_FROM") && (env("EMAIL_PROVIDER") || "resend") === "resend",
-    claudeModel: (hasGemini && !configured("ANTHROPIC_WORKSPACE_ID") ? env("GEMINI_MODEL") || "gemini-2.5-flash" : env("CLAUDE_MODEL")) || null,
+    claudeModel: (hasClaude ? env("CLAUDE_MODEL") || "claude-opus-5-5" : env("GEMINI_MODEL")) || null,
     transcriptionModel: env("GROQ_TRANSCRIPTION_MODEL") || "whisper-large-v3-turbo",
-    activeProvider: hasGemini && !configured("ANTHROPIC_WORKSPACE_ID") ? "Gemini" : "Claude",
+    activeProvider: hasClaude ? "Claude" : (hasGemini ? "Gemini" : "None"),
     supabase: hasSupabase
   };
 }

@@ -96,34 +96,32 @@ export async function generateWithClaude(prompt: string, systemPrompt: string = 
 }
 
 export async function writeNewsletter(transcript: string): Promise<DraftInput> {
-  if (process.env.claude_api_key && !process.env.CLAUDE_MODEL) {
+  const cKey = anthropicKey();
+  const gKey = geminiKey();
+  if (cKey && !env("CLAUDE_MODEL")) {
     throw new Error("CLAUDE_MODEL is required. Set a model ID available to this Anthropic account, then retry.");
   }
-  const gKey = geminiKey();
-  const cKey = anthropicKey();
   const prompt = `Transcript:\n---\n${transcript}\n---\nReturn JSON only.`;
 
-  // If Gemini is configured and we don't have a workspace-scoped Claude key, prefer Gemini
-  if (gKey && (!cKey || !env("ANTHROPIC_WORKSPACE_ID"))) {
+
+  // Primary: Claude Opus 5.5
+  if (cKey) {
     try {
-      const text = await generateWithGemini(prompt, EDITORIAL_SYSTEM_PROMPT);
+      const text = await generateWithClaude(prompt, EDITORIAL_SYSTEM_PROMPT);
       return parseDraft(text);
     } catch (error) {
-      if (!cKey) throw error;
+      if (!gKey) throw error;
+      console.warn("Claude generation failed, falling back to Gemini:", error);
     }
   }
 
-  // Attempt Claude, falling back to Gemini if Claude fails
-  try {
-    const text = await generateWithClaude(prompt, EDITORIAL_SYSTEM_PROMPT);
+  // Fallback: Gemini
+  if (gKey) {
+    const text = await generateWithGemini(prompt, EDITORIAL_SYSTEM_PROMPT);
     return parseDraft(text);
-  } catch (error) {
-    if (gKey) {
-      const text = await generateWithGemini(prompt, EDITORIAL_SYSTEM_PROMPT);
-      return parseDraft(text);
-    }
-    throw error;
   }
+
+  throw new Error("No AI provider configured. Set ANTHROPIC_API_KEY.");
 }
 
 // AI Co-Editor Actions (Feature A)
@@ -137,7 +135,9 @@ Transcript:\n---\n${transcript}\n---
 
 Return a JSON array of objects with keys: angle, subject, headline.`;
 
-  const runPrompt = geminiKey() ? (p: string) => generateWithGemini(p, "You are a master newsletter headline copywriter. Return JSON only.") : (p: string) => generateWithClaude(p, "You are a master newsletter headline copywriter. Return JSON only.");
+  const runPrompt = anthropicKey()
+    ? (p: string) => generateWithClaude(p, "You are a master newsletter headline copywriter. Return JSON only.")
+    : (p: string) => generateWithGemini(p, "You are a master newsletter headline copywriter. Return JSON only.");
   const text = await runPrompt(prompt);
   const clean = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
   return JSON.parse(clean) as Array<{ angle: string; subject: string; headline: string }>;
@@ -160,7 +160,9 @@ ${transcript}
 
 Return JSON only with: subject, previewText, headline, body, closing.`;
 
-  const runPrompt = geminiKey() ? (p: string) => generateWithGemini(p, EDITORIAL_SYSTEM_PROMPT) : (p: string) => generateWithClaude(p, EDITORIAL_SYSTEM_PROMPT);
+  const runPrompt = anthropicKey()
+    ? (p: string) => generateWithClaude(p, EDITORIAL_SYSTEM_PROMPT)
+    : (p: string) => generateWithGemini(p, EDITORIAL_SYSTEM_PROMPT);
   const text = await runPrompt(prompt);
   return parseDraft(text);
 }
@@ -181,7 +183,9 @@ Return a JSON object with:
 - allGrounded: boolean
 - items: array of objects { claim: string, grounded: boolean, transcriptQuote: string | null, note: string }`;
 
-  const runPrompt = geminiKey() ? (p: string) => generateWithGemini(p, "You are a meticulous fact-checker. Return JSON only.") : (p: string) => generateWithClaude(p, "You are a meticulous fact-checker. Return JSON only.");
+  const runPrompt = anthropicKey()
+    ? (p: string) => generateWithClaude(p, "You are a meticulous fact-checker. Return JSON only.")
+    : (p: string) => generateWithGemini(p, "You are a meticulous fact-checker. Return JSON only.");
   const text = await runPrompt(prompt);
   const clean = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
   return JSON.parse(clean);
