@@ -11,6 +11,8 @@ import { transcribeWithGroq } from "@/lib/adapters/groq";
 import { writeNewsletter } from "@/lib/adapters/claude";
 import fsSync from "node:fs";
 import { rejectLongVideo } from "@/lib/guards";
+import { isSupabaseConfigured, supabaseFindTranscript, supabaseJobDetail } from "@/lib/supabase";
+
 
 const exec = promisify(execFile);
 const SAMPLE_TRANSCRIPT = "I grew up watching my grandmother repair clothes at the kitchen table. She never called it sustainability. She just said, if something still has life in it, why throw it away? Years later, I began mending my friends' jackets after work. People would tell me about the places those clothes had been. That is when I understood I was not only fixing fabric; I was helping people hold on to a memory.";
@@ -92,7 +94,14 @@ export async function processSample(jobId: string) {
 }
 
 export async function processLiveJob(jobId: string) {
-  const job = store.getJob(jobId);
+  let job = store.getJob(jobId);
+  if (!job && isSupabaseConfigured()) {
+    const detail = await supabaseJobDetail(jobId);
+    if (detail?.job) {
+      store.seedDetail(detail);
+      job = detail.job;
+    }
+  }
   if (!job) throw new Error("Job not found.");
   if (job.isSample) return processSample(jobId);
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "dose-engine-"));
@@ -123,13 +132,38 @@ export async function processLiveJob(jobId: string) {
       if (ok) audioPath = audioFlac;
     }
 
-    store.setJob(jobId, "transcribing");
-    const transcript = await transcribeWithGroq(audioPath);
-    store.setTranscript(jobId, transcript.text, transcript.model, transcript.language);
-    store.setJob(jobId, "drafting");
-    const draft = await writeNewsletter(transcript.text);
-    store.saveDraft(jobId, { ...draft, recipientEmail: env("DEMO_RECIPIENT_EMAIL") || undefined });
+    const existing = store.jobDetail(jobId);
+    let transcriptText = existing?.transcript?.text;
+
+    // Check remote Supabase cache if not found locally
+    if (!transcriptText && isSupabaseConfigured()) {
+      const cached = await supabaseFindTranscript({
+        jobId,
+        assetId: job.frameioAssetId,
+        filename: job.filename,
+      });
+      if (cached?.text) {
+        transcriptText = cached.text;
+        store.setTranscript(jobId, cached.text, cached.model, cached.language);
+        store.event(jobId, "transcribing", "Reusing cached transcript from Supabase (skipping Groq transcription).");
+      }
+    }
+
+    if (!transcriptText) {
+      store.setJob(jobId, "transcribing");
+      const transcript = await transcribeWithGroq(audioPath);
+      store.setTranscript(jobId, transcript.text, transcript.model, transcript.language);
+      transcriptText = transcript.text;
+    }
+
+    let draft = existing?.draft;
+    if (!draft) {
+      store.setJob(jobId, "drafting");
+      const newDraft = await writeNewsletter(transcriptText);
+      draft = store.saveDraft(jobId, { ...newDraft, recipientEmail: env("DEMO_RECIPIENT_EMAIL") || undefined });
+    }
     store.setJob(jobId, "ready_for_review");
+
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected processing error.";
     store.fail(jobId, /90 seconds/.test(message) ? "DURATION_LIMIT" : "PROCESSING_FAILED", message);
