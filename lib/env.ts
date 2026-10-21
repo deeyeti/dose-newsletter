@@ -11,9 +11,13 @@ function localEnv(): Record<string, string> {
 }
 
 export const env = (key: string) => {
-  if (process.env[key] !== undefined) return process.env[key]!;
+  if (process.env[key] !== undefined && process.env[key] !== "") return process.env[key]!;
+  const upper = key.toUpperCase();
+  if (process.env[upper] !== undefined && process.env[upper] !== "") return process.env[upper]!;
+  const lower = key.toLowerCase();
+  if (process.env[lower] !== undefined && process.env[lower] !== "") return process.env[lower]!;
   const fallback = localEnv();
-  return fallback[key] || fallback[key.toLowerCase()] || "";
+  return fallback[key] || fallback[upper] || fallback[lower] || "";
 };
 export const configured = (key: string) => Boolean(env(key));
 
@@ -21,12 +25,18 @@ export const configured = (key: string) => Boolean(env(key));
 export const anthropicKey = () => env("ANTHROPIC_API_KEY") || env("claude_api_key");
 
 export function publicConfiguration() {
-  const hasClaude = Boolean(anthropicKey()) && (configured("CLAUDE_MODEL") || true);
+  const hasClaude = Boolean(anthropicKey());
+  const hasFrameio = Boolean(env("FRAMEIO_ACCESS_TOKEN") && env("FRAMEIO_ACCOUNT_ID"));
+  const hasGroq = Boolean(env("GROQ_API_KEY"));
+  const hasEmail = Boolean(
+    (env("EMAIL_API_KEY") || env("RESEND_API_KEY") || env("resend_api_key")) &&
+    (env("EMAIL_PROVIDER") || "resend") === "resend"
+  );
   return {
-    frameio: configured("FRAMEIO_ACCESS_TOKEN") && configured("FRAMEIO_ACCOUNT_ID") && configured("FRAMEIO_WEBHOOK_SECRET"),
-    groq: configured("GROQ_API_KEY"),
+    frameio: hasFrameio,
+    groq: hasGroq,
     claude: hasClaude,
-    email: (configured("EMAIL_API_KEY") || configured("resend_api_key")) && configured("EMAIL_FROM") && (env("EMAIL_PROVIDER") || "resend") === "resend",
+    email: hasEmail,
     claudeModel: env("CLAUDE_MODEL") || "claude-opus-5-5",
     transcriptionModel: env("GROQ_TRANSCRIPTION_MODEL") || "whisper-large-v3-turbo",
     activeProvider: "Claude"
