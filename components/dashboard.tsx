@@ -1,8 +1,9 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { AssistantPanel } from "@/components/assistant-panel";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-type Config = { frameio: boolean; groq: boolean; claude: boolean; email: boolean; claudeModel: string | null; transcriptionModel: string };
+type Config = { frameio: boolean; groq: boolean; claude: boolean; email: boolean; claudeModel: string | null; transcriptionModel: string; supabase?: boolean };
 type Job = { id: string; filename: string; durationSeconds?: number; status: string; isSample: boolean; createdAt: string; errorMessage?: string };
 type Detail = { job: Job; transcript: { text: string; model: string } | null; draft: Draft | null; events: { status: string; message: string; created_at: string }[]; email: unknown };
 type Draft = { subject: string; previewText: string; headline: string; body: string; closing?: string; recipientEmail?: string; status: string };
@@ -13,6 +14,7 @@ type Theme = "light" | "dark";
 const i18n = {
   en: {
     brand: "Dose Engine",
+    aiAssistant: "AI Assistant",
     route: "Route 1 · Video to newsletter",
     eyebrowEditorial: "Editorial workflow",
     heroHeadline: "Stories begin with\u00a0a conversation.\nThey end with a deliberate\u00a0send.",
@@ -86,6 +88,7 @@ const i18n = {
   },
   ar: {
     brand: "Dose Engine",
+    aiAssistant: "المساعد الذكي",
     route: "المسار 1 · من الفيديو إلى النشرة",
     eyebrowEditorial: "سير العمل التحريري",
     heroHeadline: "القصص تبدأ بمحادثة.\nوتنتهي بإرسال مدروس.",
@@ -172,6 +175,7 @@ export function Dashboard() {
   const [notice, setNotice] = useState("");
   const [lang, setLang] = useState<Lang>("en");
   const [theme, setTheme] = useState<Theme>("light");
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   const t = i18n[lang];
 
@@ -227,6 +231,7 @@ export function Dashboard() {
     ["Groq", config?.groq],
     ["Claude", config?.claude],
     ["Email", config?.email],
+    ["Supabase", config?.supabase],
   ];
 
   return (
@@ -238,6 +243,14 @@ export function Dashboard() {
           <span className="masthead-route">{t.route}</span>
         </div>
         <div className="masthead-controls">
+          <button
+            className="assistant-btn"
+            onClick={() => setAssistantOpen(true)}
+            title={t.aiAssistant}
+          >
+            <span className="sparkle">✨</span>
+            <span>{t.aiAssistant}</span>
+          </button>
           <button className="lang-toggle" onClick={toggleLang} aria-label="Switch language" title="Switch language">
             {lang === "en" ? "عربي" : "English"}
           </button>
@@ -246,6 +259,7 @@ export function Dashboard() {
           </button>
         </div>
       </header>
+
 
       {/* ── Hero ── */}
       <section className="hero">
@@ -336,6 +350,16 @@ export function Dashboard() {
           />
         </>
       )}
+
+      {/* ── AI Assistant Panel ── */}
+      <AssistantPanel
+        open={assistantOpen}
+        onClose={() => setAssistantOpen(false)}
+        onOpenDraft={(jobId) => {
+          void open(jobId);
+        }}
+        lang={lang}
+      />
     </main>
   );
 }

@@ -20,10 +20,14 @@ export const configured = (key: string) => Boolean(env(key));
 // Supports the existing local.env name without ever returning it to the browser.
 export const anthropicKey = () => env("ANTHROPIC_API_KEY") || env("claude_api_key");
 export const geminiKey = () => env("GEMINI_API_KEY") || env("gemini_api_key");
+export const supabaseUrl = () => env("SUPABASE_URL");
+export const supabaseAnonKey = () => env("SUPABASE_ANON_KEY");
+export const supabaseServiceRoleKey = () => env("SUPABASE_SERVICE_ROLE_KEY") || env("SUPABASE_ANON_KEY");
 
 export function publicConfiguration() {
   const hasClaude = Boolean(anthropicKey()) && configured("CLAUDE_MODEL");
   const hasGemini = Boolean(geminiKey());
+  const hasSupabase = Boolean(supabaseUrl()) && (Boolean(supabaseAnonKey()) || Boolean(supabaseServiceRoleKey()));
   return {
     frameio: configured("FRAMEIO_ACCESS_TOKEN") && configured("FRAMEIO_ACCOUNT_ID") && configured("FRAMEIO_WEBHOOK_SECRET"),
     groq: configured("GROQ_API_KEY"),
@@ -31,6 +35,7 @@ export function publicConfiguration() {
     email: (configured("EMAIL_API_KEY") || configured("resend_api_key")) && configured("EMAIL_FROM") && (env("EMAIL_PROVIDER") || "resend") === "resend",
     claudeModel: (hasGemini && !configured("ANTHROPIC_WORKSPACE_ID") ? env("GEMINI_MODEL") || "gemini-2.5-flash" : env("CLAUDE_MODEL")) || null,
     transcriptionModel: env("GROQ_TRANSCRIPTION_MODEL") || "whisper-large-v3-turbo",
-    activeProvider: hasGemini && !configured("ANTHROPIC_WORKSPACE_ID") ? "Gemini" : "Claude"
+    activeProvider: hasGemini && !configured("ANTHROPIC_WORKSPACE_ID") ? "Gemini" : "Claude",
+    supabase: hasSupabase
   };
 }
