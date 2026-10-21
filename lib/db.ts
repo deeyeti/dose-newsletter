@@ -5,7 +5,12 @@ import { randomUUID } from "node:crypto";
 import { env } from "@/lib/env";
 import type { DraftInput, Job, JobStatus, NewsletterDraft } from "@/lib/types";
 
-const dbPath = path.resolve(/* turbopackIgnore: true */ process.cwd(), env("DATABASE_PATH") || ".data/dose-engine.db");
+const defaultPath = process.env.VERCEL ? "/tmp/dose-engine.db" : ".data/dose-engine.db";
+const dbPath = env("DATABASE_PATH")
+  ? path.resolve(/*turbopackIgnore: true*/ process.cwd(), env("DATABASE_PATH"))
+  : process.env.VERCEL
+  ? "/tmp/dose-engine.db"
+  : path.resolve(/*turbopackIgnore: true*/ process.cwd(), defaultPath);
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 function createDbConnection(): DatabaseSync {
   const maxRetries = 10;
