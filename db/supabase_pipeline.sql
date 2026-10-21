@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS public.drafts (
 CREATE TABLE IF NOT EXISTS public.email_sends (
   id TEXT PRIMARY KEY,
   draft_id TEXT NOT NULL UNIQUE REFERENCES public.drafts(id) ON DELETE CASCADE,
+  job_id TEXT REFERENCES public.jobs(id) ON DELETE CASCADE,
   idempotency_key TEXT NOT NULL UNIQUE,
   provider_message_id TEXT,
   sent_at TIMESTAMPTZ,
@@ -72,6 +73,8 @@ CREATE TABLE IF NOT EXISTS public.email_sends (
   status TEXT NOT NULL DEFAULT 'sending',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE public.email_sends ADD COLUMN IF NOT EXISTS job_id TEXT REFERENCES public.jobs(id) ON DELETE CASCADE;
+
 
 -- 6. Job Lifecycle Event Logs
 CREATE TABLE IF NOT EXISTS public.job_events (

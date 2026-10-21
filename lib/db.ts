@@ -576,10 +576,12 @@ export const store = {
         db.prepare("UPDATE drafts SET status='sending',updated_at=? WHERE id=?").run(now(), draftId);
         memEmailSends.set(draftId, { idempotencyKey: key, status: "sending" });
 
+        const draftObj = Array.from(memDrafts.values()).find((d) => d.id === draftId);
         if (isSupabaseConfigured()) {
           void supabaseUpsertEmailSend({
             id: randomUUID(),
             draftId,
+            jobId: draftObj?.jobId,
             idempotencyKey: key,
             status: "sending",
           });
@@ -592,10 +594,12 @@ export const store = {
     if (existingMem?.status === "sending") return { allowed: false, reason: "sending" };
     memEmailSends.set(draftId, { idempotencyKey: key, status: "sending" });
 
+    const draftObj = Array.from(memDrafts.values()).find((d) => d.id === draftId);
     if (isSupabaseConfigured()) {
       void supabaseUpsertEmailSend({
         id: randomUUID(),
         draftId,
+        jobId: draftObj?.jobId,
         idempotencyKey: key,
         status: "sending",
       });
@@ -619,10 +623,12 @@ export const store = {
       mem.sentAt = time;
     }
 
+    const draftObj = Array.from(memDrafts.values()).find((d) => d.id === draftId);
     if (isSupabaseConfigured()) {
       void supabaseUpsertEmailSend({
         id: randomUUID(),
         draftId,
+        jobId: draftObj?.jobId,
         idempotencyKey: "sent",
         status: "sent",
         providerMessageId: providerId,
@@ -646,15 +652,18 @@ export const store = {
       mem.errorMessage = message;
     }
 
+    const draftObj = Array.from(memDrafts.values()).find((d) => d.id === draftId);
     if (isSupabaseConfigured()) {
       void supabaseUpsertEmailSend({
         id: randomUUID(),
         draftId,
+        jobId: draftObj?.jobId,
         idempotencyKey: "failed",
         status: "failed",
         errorMessage: message,
       });
     }
   },
+
 
 };

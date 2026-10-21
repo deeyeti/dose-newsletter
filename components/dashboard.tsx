@@ -415,6 +415,7 @@ function JobPanel({
   const [prevDraft, setPrevDraft] = useState<Draft | null>(detail.draft);
   if (detail.draft !== prevDraft) { setPrevDraft(detail.draft); setDraft(detail.draft); }
 
+  const [panelNotice, setPanelNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [viewMode, setViewMode] = useState<"editor" | "preview">("editor");
@@ -431,35 +432,62 @@ function JobPanel({
   async function save() {
     if (!draft) return;
     setSaving(true);
-    const res = await fetch(`/api/jobs/${detail.job.id}`, {
-      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(draft),
-    });
-    const data = await res.json();
-    setSaving(false);
-    if (data.error) setNotice(data.error);
-    else { setDraft(data.draft); setNotice("Draft saved."); refresh(); }
+    setPanelNotice("");
+    try {
+      const res = await fetch(`/api/jobs/${detail.job.id}`, {
+        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(draft),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setPanelNotice(data.error);
+        setNotice(data.error);
+      } else {
+        setDraft(data.draft);
+        setPanelNotice("Draft saved successfully.");
+        setNotice("Draft saved.");
+        refresh();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to save draft.";
+      setPanelNotice(msg);
+      setNotice(msg);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function retry() {
     const res = await fetch(`/api/jobs/${detail.job.id}/retry`, { method: "POST" });
     const data = await res.json();
+    setPanelNotice(data.error || "Retry queued.");
     setNotice(data.error || "Retry queued.");
     refresh();
   }
 
   async function send() {
-    if (draft) {
-      await fetch(`/api/jobs/${detail.job.id}`, {
-        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(draft),
+    setSaving(true);
+    setPanelNotice("");
+    try {
+      const res = await fetch(`/api/jobs/${detail.job.id}/send`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirm: true, draft }),
       });
+      const data = await res.json();
+      setConfirming(false);
+      if (data.error) {
+        setPanelNotice(data.error);
+        setNotice(data.error);
+      } else {
+        setPanelNotice("Newsletter sent successfully!");
+        setNotice("Email accepted by provider.");
+        refresh();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Send failed.";
+      setPanelNotice(msg);
+      setNotice(msg);
+    } finally {
+      setSaving(false);
     }
-    const res = await fetch(`/api/jobs/${detail.job.id}/send`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirm: true }),
-    });
-    const data = await res.json();
-    setConfirming(false);
-    setNotice(data.error || "Email accepted by provider.");
-    refresh();
   }
 
   async function callEditorial(payload: Record<string, unknown>) {
@@ -515,6 +543,11 @@ function JobPanel({
           </div>
           <button className="icon-btn" onClick={close} aria-label="Close" style={{ fontSize: 20 }}>✕</button>
         </div>
+
+        {panelNotice && (
+          <p className="notice" role="status" style={{ margin: "12px 0" }}>{panelNotice}</p>
+        )}
+
 
         {/* Progress */}
         <div className="progress">

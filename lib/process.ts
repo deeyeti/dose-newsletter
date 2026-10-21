@@ -104,6 +104,41 @@ export async function processLiveJob(jobId: string) {
   }
   if (!job) throw new Error("Job not found.");
   if (job.isSample) return processSample(jobId);
+
+  // 1. Guard against re-downloading or re-processing completed or drafted jobs
+  const current = store.jobDetail(jobId);
+  if (current?.draft || job.status === "ready_for_review" || job.status === "sent" || job.status === "sending") {
+    return;
+  }
+
+  // 2. Check remote Supabase cache for existing transcript before touching video
+  let transcriptText = current?.transcript?.text;
+  if (!transcriptText && isSupabaseConfigured()) {
+    const cached = await supabaseFindTranscript({
+      jobId,
+      assetId: job.frameioAssetId,
+      filename: job.filename,
+    });
+    if (cached?.text) {
+      transcriptText = cached.text;
+      store.setTranscript(jobId, cached.text, cached.model, cached.language);
+      store.event(jobId, "transcribing", "Reusing cached transcript from Supabase (skipping video download & Groq).");
+    }
+  }
+
+  // If transcript already exists, generate draft directly without downloading video
+  if (transcriptText) {
+    let draft = current?.draft;
+    if (!draft) {
+      store.setJob(jobId, "drafting");
+      const newDraft = await writeNewsletter(transcriptText);
+      draft = store.saveDraft(jobId, { ...newDraft, recipientEmail: env("DEMO_RECIPIENT_EMAIL") || undefined });
+    }
+    store.setJob(jobId, "ready_for_review");
+    return;
+  }
+
+  // 3. First-time ingestion: download video and run full pipeline
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "dose-engine-"));
   try {
     store.setJob(jobId, "downloading");
@@ -132,38 +167,15 @@ export async function processLiveJob(jobId: string) {
       if (ok) audioPath = audioFlac;
     }
 
-    const existing = store.jobDetail(jobId);
-    let transcriptText = existing?.transcript?.text;
+    store.setJob(jobId, "transcribing");
+    const transcript = await transcribeWithGroq(audioPath);
+    store.setTranscript(jobId, transcript.text, transcript.model, transcript.language);
+    transcriptText = transcript.text;
 
-    // Check remote Supabase cache if not found locally
-    if (!transcriptText && isSupabaseConfigured()) {
-      const cached = await supabaseFindTranscript({
-        jobId,
-        assetId: job.frameioAssetId,
-        filename: job.filename,
-      });
-      if (cached?.text) {
-        transcriptText = cached.text;
-        store.setTranscript(jobId, cached.text, cached.model, cached.language);
-        store.event(jobId, "transcribing", "Reusing cached transcript from Supabase (skipping Groq transcription).");
-      }
-    }
-
-    if (!transcriptText) {
-      store.setJob(jobId, "transcribing");
-      const transcript = await transcribeWithGroq(audioPath);
-      store.setTranscript(jobId, transcript.text, transcript.model, transcript.language);
-      transcriptText = transcript.text;
-    }
-
-    let draft = existing?.draft;
-    if (!draft) {
-      store.setJob(jobId, "drafting");
-      const newDraft = await writeNewsletter(transcriptText);
-      draft = store.saveDraft(jobId, { ...newDraft, recipientEmail: env("DEMO_RECIPIENT_EMAIL") || undefined });
-    }
+    store.setJob(jobId, "drafting");
+    const newDraft = await writeNewsletter(transcriptText);
+    store.saveDraft(jobId, { ...newDraft, recipientEmail: env("DEMO_RECIPIENT_EMAIL") || undefined });
     store.setJob(jobId, "ready_for_review");
-
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected processing error.";
     store.fail(jobId, /90 seconds/.test(message) ? "DURATION_LIMIT" : "PROCESSING_FAILED", message);
@@ -171,6 +183,7 @@ export async function processLiveJob(jobId: string) {
     await fs.rm(temporary, { recursive: true, force: true });
   }
 }
+
 
 export function enqueue(jobId: string) {
   setTimeout(() => {
