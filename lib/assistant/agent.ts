@@ -78,6 +78,13 @@ async function runGeminiAgent(messages: ChatMessage[]): Promise<AssistantRespons
   const executedToolCalls: Array<{ name: string; args: any; result: any }> = [];
   let createdDraftInfo: AssistantResponse["createdDraft"] | undefined;
 
+  const candidateModels = [
+    env("GEMINI_MODEL") || "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+  ];
+  let activeModelIndex = 0;
+
   // Maximum 4 tool call rounds to prevent infinite loops
   for (let round = 0; round < 4; round++) {
     const payload = {
@@ -89,18 +96,37 @@ async function runGeminiAgent(messages: ChatMessage[]): Promise<AssistantRespons
       },
     };
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    let res: Response | null = null;
+    let data: any = null;
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      throw new Error(`Gemini agent failed (${res.status}): ${errText}`);
+    while (activeModelIndex < candidateModels.length) {
+      const currentModel = candidateModels[activeModelIndex];
+      const modelUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(currentModel)}:generateContent?key=${encodeURIComponent(key)}`;
+
+      res = await fetch(modelUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.status === 429 && activeModelIndex + 1 < candidateModels.length) {
+        console.warn(`[Gemini Agent] Model ${currentModel} rate limited (429). Failing over to ${candidateModels[activeModelIndex + 1]}...`);
+        activeModelIndex++;
+        continue;
+      }
+      break;
     }
 
-    const data = await res.json();
+    if (!res || !res.ok) {
+      const errText = await res?.text().catch(() => "") || "";
+      if (res?.status === 429) {
+        throw new Error("Rate limit reached on Gemini free tier. Please wait 30 seconds and retry.");
+      }
+      throw new Error(`Gemini agent failed (${res?.status}): ${errText}`);
+    }
+
+    data = await res.json();
+
     const candidate = data.candidates?.[0];
     if (!candidate?.content) {
       throw new Error("Gemini returned empty candidate content.");
