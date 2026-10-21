@@ -80,8 +80,9 @@ async function runGeminiAgent(messages: ChatMessage[]): Promise<AssistantRespons
 
   const candidateModels = [
     env("GEMINI_MODEL") || "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
+    "gemini-3.8-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
   ];
   let activeModelIndex = 0;
 
@@ -109,9 +110,10 @@ async function runGeminiAgent(messages: ChatMessage[]): Promise<AssistantRespons
         body: JSON.stringify(payload),
       });
 
-      if (res.status === 429 && activeModelIndex + 1 < candidateModels.length) {
-        console.warn(`[Gemini Agent] Model ${currentModel} rate limited (429). Failing over to ${candidateModels[activeModelIndex + 1]}...`);
+      if (!res.ok && activeModelIndex + 1 < candidateModels.length) {
+        console.warn(`[Gemini Agent] Model ${currentModel} returned ${res.status}. Failing over to ${candidateModels[activeModelIndex + 1]}...`);
         activeModelIndex++;
+        await new Promise((resolve) => setTimeout(resolve, 300));
         continue;
       }
       break;
