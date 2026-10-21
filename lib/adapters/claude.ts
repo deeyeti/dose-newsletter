@@ -1,5 +1,7 @@
-import { anthropicKey, geminiKey, env } from "@/lib/env";
+import { anthropicKey, env } from "@/lib/env";
 import type { DraftInput } from "@/lib/types";
+
+export const CLAUDE_DEFAULT_MODEL = "claude-opus-5-5";
 
 export const EDITORIAL_SYSTEM_PROMPT = `You are Dose of Society's senior newsletter editor. Turn raw, authentic, street-level human interview transcripts into captivating, deeply moving, and beautifully written newsletter stories that feel like an acclaimed publication (e.g. Substack or The New Yorker human interest column).
 
@@ -43,32 +45,9 @@ function parseDraft(text: string): DraftInput {
   };
 }
 
-export async function generateWithGemini(prompt: string, systemPrompt: string = EDITORIAL_SYSTEM_PROMPT): Promise<string> {
-  const gKey = geminiKey();
-  if (!gKey) throw new Error("Gemini is not configured. Set GEMINI_API_KEY.");
-  const model = env("GEMINI_MODEL") || "gemini-2.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(gKey)}`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: systemPrompt }] },
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { response_mime_type: "application/json", temperature: 0.2 }
-    })
-  });
-  if (!response.ok) {
-    const err = await response.text().catch(() => "");
-    throw new Error(`Gemini request failed (${response.status}): ${err}`);
-  }
-  const payload = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-  const text = payload.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Gemini returned empty response.");
-  return text;
-}
-
 export async function generateWithClaude(prompt: string, systemPrompt: string = EDITORIAL_SYSTEM_PROMPT): Promise<string> {
-  const key = anthropicKey(), model = env("CLAUDE_MODEL");
+  const key = anthropicKey();
+  const model = env("CLAUDE_MODEL") || CLAUDE_DEFAULT_MODEL;
   if (!key) throw new Error("Claude is not configured. Set ANTHROPIC_API_KEY (or local.env claude_api_key).");
   if (!model) throw new Error("CLAUDE_MODEL is required. Set a model ID available to this Anthropic account, then retry.");
   const workspaceId = env("ANTHROPIC_WORKSPACE_ID") || env("anthropic_workspace_id");
@@ -80,7 +59,7 @@ export async function generateWithClaude(prompt: string, systemPrompt: string = 
   if (workspaceId) {
     reqHeaders["anthropic-workspace-id"] = workspaceId;
   }
-  const request = { model, max_tokens: 1600, temperature: 0.2, system: systemPrompt, messages: [{ role: "user", content: prompt }] };
+  const request = { model, max_tokens: 4096, temperature: 0.2, system: systemPrompt, messages: [{ role: "user", content: prompt }] };
   let lastError: Error | undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
     const response = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: reqHeaders, body: JSON.stringify(request) });
@@ -88,7 +67,7 @@ export async function generateWithClaude(prompt: string, systemPrompt: string = 
       const errBody = await response.text().catch(() => "");
       throw new Error(`Claude request failed (${response.status}): ${errBody || "Verify CLAUDE_MODEL is available to this account."}`);
     }
-    const payload = await response.json() as { content?: Array<{ type: string; text?: string }> };
+    const payload = (await response.json()) as { content?: Array<{ type: string; text?: string }> };
     const text = payload.content?.find((part) => part.type === "text")?.text;
     if (text) return text;
   }
@@ -99,31 +78,9 @@ export async function writeNewsletter(transcript: string): Promise<DraftInput> {
   if (process.env.claude_api_key && !process.env.CLAUDE_MODEL) {
     throw new Error("CLAUDE_MODEL is required. Set a model ID available to this Anthropic account, then retry.");
   }
-  const gKey = geminiKey();
-  const cKey = anthropicKey();
   const prompt = `Transcript:\n---\n${transcript}\n---\nReturn JSON only.`;
-
-  // If Gemini is configured and we don't have a workspace-scoped Claude key, prefer Gemini
-  if (gKey && (!cKey || !env("ANTHROPIC_WORKSPACE_ID"))) {
-    try {
-      const text = await generateWithGemini(prompt, EDITORIAL_SYSTEM_PROMPT);
-      return parseDraft(text);
-    } catch (error) {
-      if (!cKey) throw error;
-    }
-  }
-
-  // Attempt Claude, falling back to Gemini if Claude fails
-  try {
-    const text = await generateWithClaude(prompt, EDITORIAL_SYSTEM_PROMPT);
-    return parseDraft(text);
-  } catch (error) {
-    if (gKey) {
-      const text = await generateWithGemini(prompt, EDITORIAL_SYSTEM_PROMPT);
-      return parseDraft(text);
-    }
-    throw error;
-  }
+  const text = await generateWithClaude(prompt, EDITORIAL_SYSTEM_PROMPT);
+  return parseDraft(text);
 }
 
 // AI Co-Editor Actions (Feature A)
@@ -137,8 +94,7 @@ Transcript:\n---\n${transcript}\n---
 
 Return a JSON array of objects with keys: angle, subject, headline.`;
 
-  const runPrompt = geminiKey() ? (p: string) => generateWithGemini(p, "You are a master newsletter headline copywriter. Return JSON only.") : (p: string) => generateWithClaude(p, "You are a master newsletter headline copywriter. Return JSON only.");
-  const text = await runPrompt(prompt);
+  const text = await generateWithClaude(prompt, "You are a master newsletter headline copywriter. Return JSON only.");
   const clean = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
   return JSON.parse(clean) as Array<{ angle: string; subject: string; headline: string }>;
 }
@@ -160,8 +116,7 @@ ${transcript}
 
 Return JSON only with: subject, previewText, headline, body, closing.`;
 
-  const runPrompt = geminiKey() ? (p: string) => generateWithGemini(p, EDITORIAL_SYSTEM_PROMPT) : (p: string) => generateWithClaude(p, EDITORIAL_SYSTEM_PROMPT);
-  const text = await runPrompt(prompt);
+  const text = await generateWithClaude(prompt, EDITORIAL_SYSTEM_PROMPT);
   return parseDraft(text);
 }
 
@@ -181,8 +136,7 @@ Return a JSON object with:
 - allGrounded: boolean
 - items: array of objects { claim: string, grounded: boolean, transcriptQuote: string | null, note: string }`;
 
-  const runPrompt = geminiKey() ? (p: string) => generateWithGemini(p, "You are a meticulous fact-checker. Return JSON only.") : (p: string) => generateWithClaude(p, "You are a meticulous fact-checker. Return JSON only.");
-  const text = await runPrompt(prompt);
+  const text = await generateWithClaude(prompt, "You are a meticulous fact-checker. Return JSON only.");
   const clean = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
   return JSON.parse(clean);
 }
