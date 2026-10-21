@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { store } from "@/lib/db";
-import { isSupabaseConfigured, supabaseJobDetail, supabaseUpsertDraft } from "@/lib/supabase";
+import {
+  isSupabaseConfigured,
+  supabaseJobDetail,
+  supabaseUpsertDraft,
+  supabaseDeleteJob,
+} from "@/lib/supabase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,6 +85,18 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   return NextResponse.json({ draft: saved });
 }
+
+export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  store.deleteJob(id);
+  if (isSupabaseConfigured()) {
+    await supabaseDeleteJob(id).catch((err) =>
+      console.warn("[/api/jobs/[id] DELETE supabase error]:", err)
+    );
+  }
+  return NextResponse.json({ deleted: true, id });
+}
+
 
 
 
