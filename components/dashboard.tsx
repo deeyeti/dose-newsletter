@@ -444,22 +444,15 @@ function JobPanel({
   t: typeof i18n[Lang];
   lang: Lang;
 }) {
+  const [prevRemoteDraft, setPrevRemoteDraft] = useState<Draft | null>(detail.draft);
   const [draft, setDraft] = useState<Draft | null>(detail.draft);
-  const [isDirty, setIsDirty] = useState(false);
 
-  // Sync draft from detail safely without wiping to null or overwriting unsaved user input
-  useEffect(() => {
-    const remoteDraft = detail.draft;
-    if (remoteDraft) {
-      setDraft((curr) => {
-        if (!curr) return remoteDraft;
-        if (remoteDraft.id && curr.id && curr.id !== remoteDraft.id) return remoteDraft;
-        if (isDirty) return curr;
-        if (remoteDraft.updatedAt && curr.updatedAt && remoteDraft.updatedAt !== curr.updatedAt) return remoteDraft;
-        return curr;
-      });
+  if (detail.draft !== prevRemoteDraft) {
+    setPrevRemoteDraft(detail.draft);
+    if (detail.draft) {
+      setDraft(detail.draft);
     }
-  }, [detail.draft, isDirty]);
+  }
 
   const [panelNotice, setPanelNotice] = useState("");
   const [saving, setSaving] = useState(false);
@@ -472,10 +465,8 @@ function JobPanel({
     items: Array<{ statement: string; isGrounded: boolean; transcriptEvidence?: string }>;
   } | null>(null);
 
-  const set = (key: keyof Draft, value: string) => {
-    setIsDirty(true);
+  const set = (key: keyof Draft, value: string) =>
     setDraft((cur) => (cur ? { ...cur, [key]: value } : cur));
-  };
 
   async function save() {
     if (!draft) return;
@@ -490,8 +481,8 @@ function JobPanel({
         setPanelNotice(data.error);
         setNotice(data.error);
       } else {
-        setIsDirty(false);
         setDraft(data.draft);
+        setPrevRemoteDraft(data.draft);
         setPanelNotice("Draft saved successfully.");
         setNotice("Draft saved.");
         refresh();
@@ -526,7 +517,6 @@ function JobPanel({
         setPanelNotice(data.error);
         setNotice(data.error);
       } else {
-        setIsDirty(false);
         setPanelNotice("Newsletter sent successfully!");
         setNotice("Email accepted by provider.");
         refresh();
@@ -560,8 +550,11 @@ function JobPanel({
     setCoWorking(lang === "ar" ? `جاري ضبط النبرة (${tone})…` : `Adjusting tone (${tone})…`);
     try {
       const data = await callEditorial({ action: "tone", tone });
-      if (data.draft) { setDraft(data.draft); setNotice(`Draft rewritten with ${tone} tone.`); }
-      else setNotice(data.error || "Could not adjust tone.");
+      if (data.draft) {
+        setDraft(data.draft);
+        setPrevRemoteDraft(data.draft);
+        setNotice(`Draft rewritten with ${tone} tone.`);
+      } else setNotice(data.error || "Could not adjust tone.");
     } finally { setCoWorking(null); }
   }
 
