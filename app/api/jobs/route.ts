@@ -12,7 +12,22 @@ export async function GET() {
   try {
     const isRemote = isSupabaseConfigured();
 
+    let remoteJobs: any[] | null = null;
+    if (isRemote) {
+      try {
+        remoteJobs = await supabaseListJobs();
+        if (remoteJobs !== null) {
+          for (const rj of remoteJobs) {
+            store.seedJob(rj);
+          }
+        }
+      } catch (sbErr) {
+        console.warn("[/api/jobs supabase sync warning]:", sbErr);
+      }
+    }
+
     const now = Date.now();
+    let newJobsCreated = false;
     // Cache sync for 3 seconds to avoid exhausting rate limits on frequent dashboard polls
     if (now - lastSync > 3000) {
       lastSync = now;
@@ -29,6 +44,7 @@ export async function GET() {
             });
             if (isRemote && created) {
               await supabaseUpsertJob(job);
+              newJobsCreated = true;
             }
           }
         }
@@ -39,16 +55,11 @@ export async function GET() {
 
     // When Supabase is configured, it is the single authoritative source of truth across all instances
     if (isRemote) {
-      try {
-        const remoteJobs = await supabaseListJobs();
-        if (remoteJobs !== null) {
-          for (const rj of remoteJobs) {
-            store.seedJob(rj);
-          }
-          return NextResponse.json({ jobs: remoteJobs });
-        }
-      } catch (sbErr) {
-        console.warn("[/api/jobs supabase sync warning]:", sbErr);
+      if (newJobsCreated) {
+        remoteJobs = await supabaseListJobs();
+      }
+      if (remoteJobs !== null) {
+        return NextResponse.json({ jobs: remoteJobs });
       }
     }
 

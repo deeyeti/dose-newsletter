@@ -24,7 +24,7 @@ try {
 }
 
 const isVercel = Boolean(process.env.VERCEL);
-const isTest = process.env.NODE_ENV === "test" || process.env.npm_lifecycle_event === "test";
+const isTest = process.env.NODE_ENV === "test" || process.env.npm_lifecycle_event === "test" || process.argv.some((a) => a.includes("test"));
 const shouldSyncSupabase = () => isSupabaseConfigured() && !isTest;
 const dbPath = isTest
   ? ":memory:"
@@ -600,13 +600,13 @@ export const store = {
     return true;
   },
 
-  beginSend(draftId: string) {
+  beginSend(draftId: string, allowResend = false) {
     const key = randomUUID();
     const db = getDb();
     if (db) {
       try {
         const existing = db.prepare("SELECT * FROM email_sends WHERE draft_id=?").get(draftId) as Row | undefined;
-        if (existing?.status === "sent") return { allowed: false, reason: "already_sent" };
+        if (!allowResend && existing?.status === "sent") return { allowed: false, reason: "already_sent" };
         if (existing?.status === "sending") return { allowed: false, reason: "sending" };
         if (existing) {
           db.prepare("UPDATE email_sends SET idempotency_key=?,status='sending',error_message=NULL WHERE draft_id=?").run(key, draftId);
@@ -617,6 +617,7 @@ export const store = {
         memEmailSends.set(draftId, { idempotencyKey: key, status: "sending" });
 
         const draftObj = Array.from(memDrafts.values()).find((d) => d.id === draftId);
+        if (draftObj) draftObj.status = "sending";
         if (shouldSyncSupabase()) {
           void supabaseUpsertEmailSend({
             id: randomUUID(),
@@ -630,11 +631,12 @@ export const store = {
       } catch {}
     }
     const existingMem = memEmailSends.get(draftId);
-    if (existingMem?.status === "sent") return { allowed: false, reason: "already_sent" };
+    if (!allowResend && existingMem?.status === "sent") return { allowed: false, reason: "already_sent" };
     if (existingMem?.status === "sending") return { allowed: false, reason: "sending" };
     memEmailSends.set(draftId, { idempotencyKey: key, status: "sending" });
 
     const draftObj = Array.from(memDrafts.values()).find((d) => d.id === draftId);
+    if (draftObj) draftObj.status = "sending";
     if (shouldSyncSupabase()) {
       void supabaseUpsertEmailSend({
         id: randomUUID(),
@@ -664,6 +666,10 @@ export const store = {
     }
 
     const draftObj = Array.from(memDrafts.values()).find((d) => d.id === draftId);
+    if (draftObj) {
+      draftObj.status = "sent";
+      draftObj.updatedAt = time;
+    }
     if (shouldSyncSupabase()) {
       void supabaseUpsertEmailSend({
         id: randomUUID(),
