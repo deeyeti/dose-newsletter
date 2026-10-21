@@ -168,9 +168,9 @@ const fmt = (value: string) =>
   new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
-export function Dashboard() {
+export function Dashboard({ initialConfig }: { initialConfig?: Config | null } = {}) {
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [config, setConfig] = useState<Config | null>(null);
+  const [config, setConfig] = useState<Config | null>(initialConfig ?? null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [notice, setNotice] = useState("");
   const [lang, setLang] = useState<Lang>("en");
