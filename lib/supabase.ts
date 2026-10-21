@@ -141,7 +141,7 @@ export async function supabaseUpsertJob(job: Job): Promise<void> {
   if (!creds) return;
 
   try {
-    await fetch(`${creds.url}/rest/v1/jobs`, {
+    const res = await fetch(`${creds.url}/rest/v1/jobs?on_conflict=id`, {
       method: "POST",
       headers: { ...creds.headers, Prefer: "resolution=merge-duplicates" },
       body: JSON.stringify({
@@ -159,6 +159,10 @@ export async function supabaseUpsertJob(job: Job): Promise<void> {
         updated_at: job.updatedAt,
       }),
     });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.warn(`[supabase] upsertJob status ${res.status}:`, errText);
+    }
   } catch (err) {
     console.warn("[supabase] upsertJob failed:", err);
   }
@@ -286,7 +290,7 @@ export async function supabaseUpsertTranscript(item: {
   if (!creds) return;
 
   try {
-    await fetch(`${creds.url}/rest/v1/transcripts`, {
+    const res = await fetch(`${creds.url}/rest/v1/transcripts?on_conflict=job_id`, {
       method: "POST",
       headers: { ...creds.headers, Prefer: "resolution=merge-duplicates" },
       body: JSON.stringify({
@@ -301,6 +305,10 @@ export async function supabaseUpsertTranscript(item: {
         created_at: item.createdAt,
       }),
     });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.warn(`[supabase] upsertTranscript status ${res.status}:`, errText);
+    }
   } catch (err) {
     console.warn("[supabase] upsertTranscript failed:", err);
   }
@@ -312,7 +320,7 @@ export async function supabaseUpsertDraft(draft: NewsletterDraft): Promise<void>
   if (!creds) return;
 
   try {
-    await fetch(`${creds.url}/rest/v1/drafts`, {
+    const res = await fetch(`${creds.url}/rest/v1/drafts?on_conflict=job_id`, {
       method: "POST",
       headers: { ...creds.headers, Prefer: "resolution=merge-duplicates" },
       body: JSON.stringify({
@@ -328,6 +336,10 @@ export async function supabaseUpsertDraft(draft: NewsletterDraft): Promise<void>
         updated_at: draft.updatedAt,
       }),
     });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.warn(`[supabase] upsertDraft status ${res.status}:`, errText);
+    }
   } catch (err) {
     console.warn("[supabase] upsertDraft failed:", err);
   }
@@ -347,7 +359,7 @@ export async function supabaseUpsertEmailSend(send: {
   if (!creds) return;
 
   try {
-    await fetch(`${creds.url}/rest/v1/email_sends`, {
+    const res = await fetch(`${creds.url}/rest/v1/email_sends?on_conflict=draft_id`, {
       method: "POST",
       headers: { ...creds.headers, Prefer: "resolution=merge-duplicates" },
       body: JSON.stringify({
@@ -361,6 +373,10 @@ export async function supabaseUpsertEmailSend(send: {
         status: send.status,
       }),
     });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.warn(`[supabase] upsertEmailSend status ${res.status}:`, errText);
+    }
   } catch (err) {
     console.warn("[supabase] upsertEmailSend failed:", err);
   }
