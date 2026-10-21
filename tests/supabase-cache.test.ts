@@ -39,8 +39,8 @@ test("Supabase transcript caching & local hydration", async () => {
   assert.equal(found?.filename, "remote-video.mp4");
 
   // Clean up
-  store.deleteJob(job.id);
-  store.deleteJob("remote-job-123");
+  await store.deleteJob(job.id);
+  await store.deleteJob("remote-job-123");
   assert.equal(store.getJob(job.id), undefined);
   assert.equal(store.getJob("remote-job-123"), undefined);
 });

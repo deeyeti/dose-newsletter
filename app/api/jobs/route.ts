@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { store } from "@/lib/db";
 import { listFrameFiles } from "@/lib/adapters/frameio";
-import { isSupabaseConfigured, supabaseListJobs } from "@/lib/supabase";
+import { isSupabaseConfigured, supabaseListJobs, supabaseUpsertJob } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,19 +10,7 @@ let lastSync = 0;
 
 export async function GET() {
   try {
-    // If Supabase is configured, hydrate local store from remote so all serverless instances stay in sync
-    if (isSupabaseConfigured()) {
-      try {
-        const remoteJobs = await supabaseListJobs();
-        if (remoteJobs && remoteJobs.length > 0) {
-          for (const rj of remoteJobs) {
-            store.seedJob(rj);
-          }
-        }
-      } catch (sbErr) {
-        console.warn("[/api/jobs supabase sync warning]:", sbErr);
-      }
-    }
+    const isRemote = isSupabaseConfigured();
 
     const now = Date.now();
     // Cache sync for 3 seconds to avoid exhausting rate limits on frequent dashboard polls
@@ -33,16 +21,34 @@ export async function GET() {
         if (frameFiles && frameFiles.length > 0) {
           // Ensure every active file in the Frame.io folder is registered as a job
           for (const file of frameFiles) {
-            store.createJob({
+            const { job, created } = store.createJob({
               assetId: file.id,
               projectId: file.projectId,
               filename: file.name,
               mediaType: file.mediaType,
             });
+            if (isRemote && created) {
+              await supabaseUpsertJob(job);
+            }
           }
         }
       } catch (syncErr) {
         console.warn("[/api/jobs sync warning]:", syncErr);
+      }
+    }
+
+    // When Supabase is configured, it is the single authoritative source of truth across all instances
+    if (isRemote) {
+      try {
+        const remoteJobs = await supabaseListJobs();
+        if (remoteJobs !== null) {
+          for (const rj of remoteJobs) {
+            store.seedJob(rj);
+          }
+          return NextResponse.json({ jobs: remoteJobs });
+        }
+      } catch (sbErr) {
+        console.warn("[/api/jobs supabase sync warning]:", sbErr);
       }
     }
 

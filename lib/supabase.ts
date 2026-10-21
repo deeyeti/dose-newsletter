@@ -451,7 +451,21 @@ export async function supabaseDeleteJob(jobId: string): Promise<void> {
   if (!creds) return;
 
   try {
-    await fetch(`${creds.url}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`, {
+    const encoded = encodeURIComponent(jobId);
+    await fetch(`${creds.url}/rest/v1/job_events?job_id=eq.${encoded}`, {
+      method: "DELETE",
+      headers: creds.headers,
+    }).catch(() => {});
+    await fetch(`${creds.url}/rest/v1/transcripts?job_id=eq.${encoded}`, {
+      method: "DELETE",
+      headers: creds.headers,
+    }).catch(() => {});
+    await fetch(`${creds.url}/rest/v1/drafts?job_id=eq.${encoded}`, {
+      method: "DELETE",
+      headers: creds.headers,
+    }).catch(() => {});
+
+    await fetch(`${creds.url}/rest/v1/jobs?id=eq.${encoded}`, {
       method: "DELETE",
       headers: creds.headers,
     });

@@ -278,6 +278,7 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
         if (detail?.job.id === id) setDetail(null);
         setJobs((prev) => prev.filter((j) => j.id !== id));
         setNotice(t.videoDeleted);
+        void load();
       } else {
         const data = await res.json().catch(() => ({}));
         setNotice(data.error || "Failed to delete video.");
@@ -297,6 +298,7 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
     setJobs((prev) => prev.filter((j) => !j.isSample));
     if (detail?.job.isSample) setDetail(null);
     setNotice(t.samplesCleared);
+    void load();
   }
 
   const connections: [string, boolean | undefined][] = [

@@ -53,7 +53,7 @@ test("API: GET /api/jobs/[id] handles valid and invalid IDs", async () => {
   assert.ok(data.transcript);
 
   // Clean up
-  store.deleteJob(job.id);
+  await store.deleteJob(job.id);
 });
 
 test("API: DELETE /api/jobs/[id] deletes job and its associated data", async () => {
@@ -105,7 +105,7 @@ test("API: PATCH /api/jobs/[id] updates draft fields and guards invalid IDs", as
   assert.equal(patchData.draft.recipientEmail, "editor@test.com");
 
   // Clean up
-  store.deleteJob(job.id);
+  await store.deleteJob(job.id);
 });
 
 test("API: POST /api/jobs/[id]/send guards missing confirm, bad email, and duplicates", async () => {
@@ -184,7 +184,7 @@ test("API: POST /api/jobs/[id]/send guards missing confirm, bad email, and dupli
   else delete process.env.EMAIL_PROVIDER;
 
   // Clean up
-  store.deleteJob(job.id);
+  await store.deleteJob(job.id);
 });
 
 
@@ -194,9 +194,7 @@ test("API: POST /api/demo/sample creates pre-filled sample job", async () => {
   const data = await res.json();
   assert.ok(data.job);
   assert.equal(data.job.isSample, true);
-  assert.equal(data.job.status, "received");
+  assert.equal(data.job.status, "ready_for_review");
 
-  // Wait briefly for asynchronous sample processing before cleaning up
-  await new Promise((resolve) => setTimeout(resolve, 80));
-  store.deleteJob(data.job.id);
+  await store.deleteJob(data.job.id);
 });
