@@ -195,12 +195,22 @@ export function Dashboard() {
   const toggleLang = () => setLang((p) => (p === "en" ? "ar" : "en"));
 
   const load = useCallback(async () => {
-    const [jobsRes, healthRes] = await Promise.all([
-      fetch("/api/jobs", { cache: "no-store" }),
-      fetch("/api/health", { cache: "no-store" }),
-    ]);
-    setJobs((await jobsRes.json()).jobs);
-    setConfig((await healthRes.json()).configuration);
+    try {
+      const [jobsRes, healthRes] = await Promise.all([
+        fetch("/api/jobs", { cache: "no-store" }).catch(() => null),
+        fetch("/api/health", { cache: "no-store" }).catch(() => null),
+      ]);
+      if (jobsRes && jobsRes.ok) {
+        const jobsData = await jobsRes.json().catch(() => ({}));
+        setJobs(jobsData.jobs || []);
+      }
+      if (healthRes && healthRes.ok) {
+        const healthData = await healthRes.json().catch(() => ({}));
+        setConfig(healthData.configuration || null);
+      }
+    } catch (err) {
+      console.error("[Dashboard] load error:", err);
+    }
   }, []);
 
   const open = useCallback(async (id: string) => {
