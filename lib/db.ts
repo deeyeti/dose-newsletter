@@ -7,10 +7,38 @@ import type { DraftInput, Job, JobStatus, NewsletterDraft } from "@/lib/types";
 
 const dbPath = path.resolve(/* turbopackIgnore: true */ process.cwd(), env("DATABASE_PATH") || ".data/dose-engine.db");
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-const sql = new DatabaseSync(dbPath);
-// Several Next build workers can load route modules together. Let schema init wait rather than fail on SQLite's short default lock window.
-sql.exec("PRAGMA busy_timeout = 10000; PRAGMA journal_mode = WAL;");
-sql.exec(fs.readFileSync(path.join(process.cwd(), "db/schema.sql"), "utf8"));
+function createDbConnection(): DatabaseSync {
+  const maxRetries = 10;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const db = new DatabaseSync(dbPath);
+      // Set busy_timeout first so SQLite waits on locks
+      db.exec("PRAGMA busy_timeout = 20000;");
+      try {
+        db.exec("PRAGMA journal_mode = WAL;");
+      } catch (walErr: unknown) {
+        const msg = walErr instanceof Error ? walErr.message : String(walErr);
+        if (!msg.includes("locked") && !msg.includes("busy")) throw walErr;
+      }
+      db.exec(fs.readFileSync(path.join(process.cwd(), "db/schema.sql"), "utf8"));
+      return db;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isLocked = msg.includes("locked") || msg.includes("busy") || (typeof err === "object" && err !== null && (err as { errcode?: number }).errcode === 5);
+      if (isLocked && attempt < maxRetries) {
+        const waitMs = 50 + Math.floor(Math.random() * 80) * attempt;
+        const until = Date.now() + waitMs;
+        while (Date.now() < until) {} // synchronous backoff for build worker
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("Failed to initialize database after retries.");
+}
+
+const sql = createDbConnection();
+
 const now = () => new Date().toISOString();
 
 type Row = Record<string, unknown>;
