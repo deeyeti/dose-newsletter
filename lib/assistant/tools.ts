@@ -1,5 +1,5 @@
 import { getSupabase } from "@/lib/supabase";
-import { generateEmbedding, cosineSimilarity } from "@/lib/assistant/embeddings";
+import { chunkTranscript, scoreTextRelevance } from "@/lib/assistant/embeddings";
 import { store } from "@/lib/db";
 import { writeNewsletter } from "@/lib/adapters/claude";
 import { env } from "@/lib/env";
@@ -42,7 +42,7 @@ export const ASSISTANT_TOOLS: ToolDefinition[] = [
   },
   {
     name: "semantic_search_quotes",
-    description: "Searches the verbatim interview transcript chunks by semantic meaning and emotional themes using vector embeddings. Use this to find quotes on specific topics (e.g. 'grief and loss', 'family sacrifice', 'regret and money').",
+    description: "Searches verbatim interview transcript chunks by emotional themes, topics, and keywords. Use this to find quotes on specific topics (e.g. 'grief and loss', 'family sacrifice', 'regret and money').",
     parameters: {
       type: "object",
       properties: {
@@ -175,74 +175,75 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
     const minSaves = args.min_saves ? Number(args.min_saves) : 0;
 
     try {
-      const queryVector = await generateEmbedding(query);
-
-      // Attempt Supabase pgvector RPC first
-      const rpcResult = await supabase.rpc("match_reel_chunks", {
-        query_embedding: queryVector,
-        match_threshold: 0.15,
-        match_count: limit * 2,
-      });
-
-      let chunks: Array<{ reel_id: string; chunk_text: string; speaker_timestamp?: string; similarity: number }> = [];
-
-      if (!rpcResult.error && Array.isArray(rpcResult.data) && rpcResult.data.length > 0) {
-        chunks = rpcResult.data;
-      } else {
-        // Fallback: fetch raw chunks and calculate cosine similarity in JS
-        const { data: rawChunks, error: chunksErr } = await supabase
-          .from("reel_embeddings")
-          .select("reel_id, chunk_text, speaker_timestamp, embedding")
-          .limit(100);
-
-        if (chunksErr || !rawChunks) {
-          return {
-            error: `Vector search unavailable: ${chunksErr?.message || "No embeddings found in Supabase"}. If tables are not created yet, please run the migration SQL.`,
-          };
-        }
-
-        chunks = rawChunks
-          .map((row) => {
-            let emb = row.embedding;
-            if (typeof emb === "string") {
-              try { emb = JSON.parse(emb); } catch { emb = []; }
-            }
-            return {
-              reel_id: row.reel_id,
-              chunk_text: row.chunk_text,
-              speaker_timestamp: row.speaker_timestamp,
-              similarity: Array.isArray(emb) && emb.length > 0 ? cosineSimilarity(queryVector, emb) : 0,
-            };
-          })
-          .sort((a, b) => b.similarity - a.similarity)
-          .slice(0, limit * 2);
-      }
-
-      // Fetch reel metadata & metrics for the matched reels
-      const reelIds = Array.from(new Set(chunks.map((c) => c.reel_id)));
-      if (reelIds.length === 0) {
-        return { message: "No matching quotes found for this query.", quotes: [] };
-      }
-
-      const { data: reels } = await supabase
+      // 1. Fetch available reels and their metrics
+      const { data: reels, error: reelsErr } = await supabase
         .from("reels")
-        .select("id, summary, key_themes, permalink")
-        .in("id", reelIds);
+        .select("id, summary, key_themes, permalink, caption, transcript");
+
+      if (reelsErr || !reels || reels.length === 0) {
+        return {
+          error: `Archive query unavailable: ${reelsErr?.message || "No reels found in Supabase"}. If tables are not created yet, please run the migration SQL or seed script.`,
+        };
+      }
 
       const { data: metrics } = await supabase
         .from("reel_metrics")
-        .select("reel_id, saves, shares, views, engagement_rate")
-        .in("reel_id", reelIds);
+        .select("reel_id, saves, shares, views, engagement_rate");
 
-      const reelMap = new Map((reels || []).map((r) => [r.id, r]));
       const metricMap = new Map((metrics || []).map((m) => [m.reel_id, m]));
+      const reelMap = new Map(reels.map((r) => [r.id, r]));
 
-      const results = chunks
+      // 2. Fetch raw chunks from reel_embeddings if available, or generate from transcript
+      const { data: rawChunks } = await supabase
+        .from("reel_embeddings")
+        .select("reel_id, chunk_text, speaker_timestamp")
+        .limit(200);
+
+      interface CandidateChunk {
+        reel_id: string;
+        chunk_text: string;
+        speaker_timestamp?: string;
+        similarity: number;
+      }
+
+      let allChunks: CandidateChunk[] = [];
+
+      if (rawChunks && rawChunks.length > 0) {
+        allChunks = rawChunks.map((c) => {
+          const reel = reelMap.get(c.reel_id);
+          const score = scoreTextRelevance(query, c.chunk_text, reel?.key_themes || []);
+          return {
+            reel_id: c.reel_id,
+            chunk_text: c.chunk_text,
+            speaker_timestamp: c.speaker_timestamp,
+            similarity: score,
+          };
+        });
+      } else {
+        // Fallback: chunk transcripts on the fly
+        for (const reel of reels) {
+          if (!reel.transcript) continue;
+          const chunks = chunkTranscript(reel.transcript, 40);
+          for (const ch of chunks) {
+            const score = scoreTextRelevance(query, ch.chunkText, reel.key_themes || []);
+            allChunks.push({
+              reel_id: reel.id,
+              chunk_text: ch.chunkText,
+              speaker_timestamp: ch.speakerTimestamp,
+              similarity: score,
+            });
+          }
+        }
+      }
+
+      // Filter by minSaves, sort by relevance score descending
+      const results = allChunks
         .filter((c) => {
           if (!minSaves) return true;
           const m = metricMap.get(c.reel_id);
           return m ? m.saves >= minSaves : false;
         })
+        .sort((a, b) => b.similarity - a.similarity)
         .slice(0, limit)
         .map((c) => {
           const r = reelMap.get(c.reel_id);

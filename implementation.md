@@ -74,7 +74,7 @@ create table reel_embeddings (
   reel_id text references reels(id) on delete cascade,
   chunk_text text not null, -- 1-2 sentence verbatim quote or story beat
   speaker_timestamp text,   -- e.g. "00:14 - 00:28"
-  embedding vector(1536)    -- OpenAI text-embedding-3-small or Gemini text-embedding-004
+  embedding vector(1536)    -- Optional dense vector embedding
 );
 
 -- Indexing for high-speed hybrid search
@@ -146,9 +146,9 @@ Claude 3.5 Sonnet acts as an intelligent editorial agent using Anthropic Functio
 - [ ] **Phase 2: Instagram Graph API Integration**
   - Set up Meta Developer App with Instagram Graph API permissions.
   - Implement scheduled sync route `/api/cron/instagram-sync`.
-- [ ] **Phase 3: Embedding Pipeline**
-  - Add embedding generator utility using Gemini `text-embedding-004` or OpenAI `text-embedding-3-small`.
-  - Store chunked transcript vectors on reel ingest.
+- [x] **Phase 3: Thematic Transcript & Quote Pipeline**
+  - Add chunking & quote retrieval utility with speaker timestamps.
+  - Store chunked transcript segments on reel ingest.
 - [ ] **Phase 4: Assistant Interface in Dose Engine Dashboard**
   - Add "Dose AI Assistant" slide-out chat bar in `components/dashboard.tsx`.
   - Implement `/api/assistant/chat` with Claude tool calling.

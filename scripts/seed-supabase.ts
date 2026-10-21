@@ -1,5 +1,5 @@
 import { getSupabase } from "../lib/supabase";
-import { generateEmbedding, chunkTranscript } from "../lib/assistant/embeddings";
+import { chunkTranscript } from "../lib/assistant/embeddings";
 
 const SAMPLE_REELS = [
   {
@@ -127,25 +127,23 @@ export async function seedSupabaseArchive() {
       console.warn(`Metric insert note for ${item.id}:`, metricErr.message);
     }
 
-    // 3. Chunk transcript and generate embeddings
+    // 3. Chunk transcript and store quote chunks
     const chunks = chunkTranscript(item.transcript, 40);
-    console.log(`Generating embeddings for ${chunks.length} chunks...`);
+    console.log(`Storing ${chunks.length} transcript chunks for ${item.id}...`);
 
     for (const chunk of chunks) {
       try {
-        const embedding = await generateEmbedding(chunk.chunkText);
-        const { error: embErr } = await supabase.from("reel_embeddings").insert({
+        const { error: chunkErr } = await supabase.from("reel_embeddings").insert({
           reel_id: item.id,
           chunk_text: chunk.chunkText,
           speaker_timestamp: chunk.speakerTimestamp,
-          embedding,
         });
 
-        if (embErr) {
-          console.warn(`Embedding insert error for chunk:`, embErr.message);
+        if (chunkErr) {
+          console.warn(`Chunk insert note:`, chunkErr.message);
         }
       } catch (err: unknown) {
-        console.error(`Embedding generation failed for chunk:`, err);
+        console.error(`Chunk insert failed:`, err);
       }
     }
   }

@@ -41,7 +41,7 @@ create table if not exists reel_embeddings (
   reel_id text references reels(id) on delete cascade,
   chunk_text text not null, -- 1-2 sentence verbatim quote or story beat
   speaker_timestamp text,   -- e.g. "00:14 - 00:28"
-  embedding vector(1536)    -- Gemini text-embedding-001 (1536 dimensions)
+  embedding vector(1536)    -- Optional dense vector embedding (1536 dimensions)
 );
 
 -- Indexes for high-speed queries

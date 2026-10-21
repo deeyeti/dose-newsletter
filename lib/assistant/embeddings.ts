@@ -1,45 +1,48 @@
-import { geminiKey, env } from "@/lib/env";
+/**
+ * Utility functions for transcript chunking, text analysis, and semantic similarity.
+ */
 
 export const EMBEDDING_DIMENSION = 1536;
 
+const STOP_WORDS = new Set([
+  "the", "and", "for", "that", "this", "with", "from", "have", "what", "about",
+  "they", "will", "would", "there", "their", "which", "when", "some", "into",
+  "also", "than", "then", "been", "were", "where", "them", "more", "very"
+]);
+
 /**
- * Generate a dense vector embedding using Gemini's embedding model.
- * Defaults to 1536 dimensions to match pgvector schema.
+ * Computes a normalized relevance score (0 to 1) for a text chunk against a thematic search query.
  */
-export async function generateEmbedding(text: string): Promise<number[]> {
-  const key = geminiKey();
-  if (!key) throw new Error("Gemini API key is not configured. Set GEMINI_API_KEY.");
+export function scoreTextRelevance(query: string, text: string, themes: string[] = []): number {
+  if (!query || !text) return 0;
+  const queryTerms = query
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
 
-  const model = env("GEMINI_EMBEDDING_MODEL") || "models/gemini-embedding-001";
-  const url = `https://generativelanguage.googleapis.com/v1beta/${model.startsWith("models/") ? model : "models/" + model}:embedContent?key=${encodeURIComponent(key)}`;
+  if (queryTerms.length === 0) return 0;
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: model.startsWith("models/") ? model : `models/${model}`,
-      content: { parts: [{ text }] },
-      outputDimensionality: EMBEDDING_DIMENSION,
-    }),
-  });
+  const lowerText = text.toLowerCase();
+  const lowerThemes = themes.map((t) => t.toLowerCase());
 
-  if (!response.ok) {
-    const errText = await response.text().catch(() => "");
-    throw new Error(`Gemini embedding failed (${response.status}): ${errText}`);
+  let termMatches = 0;
+  for (const term of queryTerms) {
+    if (lowerText.includes(term)) {
+      termMatches += 1;
+    }
+    if (lowerThemes.some((t) => t.includes(term) || term.includes(t))) {
+      termMatches += 1.5;
+    }
   }
 
-  const data = (await response.json()) as { embedding?: { values?: number[] } };
-  const values = data.embedding?.values;
-  if (!values || !Array.isArray(values)) {
-    throw new Error("Gemini returned invalid embedding values.");
-  }
-
-  return values;
+  const score = Math.min(1, termMatches / Math.max(queryTerms.length, 1));
+  return Math.round(score * 100) / 100;
 }
 
 /**
  * Breaks down an interview transcript into distinct conversational beats / quote chunks
- * for semantic indexing.
+ * for indexing and quick retrieval.
  */
 export function chunkTranscript(
   transcript: string,
@@ -48,7 +51,7 @@ export function chunkTranscript(
   const clean = transcript.trim();
   if (!clean) return [];
 
-  // If transcript already has timestamps (e.g. [00:14] or 00:14 - 00:28), extract them
+  // Split into sentences
   const sentences = clean.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) || [clean];
   const chunks: Array<{ chunkText: string; speakerTimestamp?: string }> = [];
 
