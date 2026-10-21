@@ -208,7 +208,7 @@ export const store = {
     if (db) {
       try {
         db.prepare(
-          "INSERT OR IGNORE INTO jobs (id,frameio_asset_id,frameio_project_id,filename,media_type,status,is_sample,error_code,error_message,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+          "INSERT INTO jobs (id,frameio_asset_id,frameio_project_id,filename,media_type,status,is_sample,error_code,error_message,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status, duration_seconds=COALESCE(excluded.duration_seconds, jobs.duration_seconds), error_code=excluded.error_code, error_message=excluded.error_message, updated_at=excluded.updated_at"
         ).run(
           job.id,
           job.frameioAssetId,
@@ -234,7 +234,7 @@ export const store = {
       if (db) {
         try {
           db.prepare(
-            "INSERT OR IGNORE INTO drafts (id,job_id,subject,preview_text,headline,body,closing,recipient_email,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?, 'draft',?,?)"
+            "INSERT INTO drafts (id,job_id,subject,preview_text,headline,body,closing,recipient_email,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?, 'draft',?,?) ON CONFLICT(job_id) DO UPDATE SET subject=excluded.subject, preview_text=excluded.preview_text, headline=excluded.headline, body=excluded.body, closing=excluded.closing, recipient_email=excluded.recipient_email, status=excluded.status, updated_at=excluded.updated_at"
           ).run(
             detail.draft.id,
             detail.draft.jobId,
@@ -256,7 +256,7 @@ export const store = {
       if (db) {
         try {
           db.prepare(
-            "INSERT OR IGNORE INTO transcripts (id,job_id,text,language,provider,model,created_at) VALUES (?,?,?,?,?,?,?)"
+            "INSERT INTO transcripts (id,job_id,text,language,provider,model,created_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(job_id) DO UPDATE SET text=excluded.text, language=excluded.language, provider=excluded.provider, model=excluded.model"
           ).run(
             randomUUID(),
             detail.job.id,
@@ -271,6 +271,17 @@ export const store = {
     }
     if (detail.events && detail.events.length > 0) {
       memEvents.set(detail.job.id, detail.events);
+      const db = getDb();
+      if (db) {
+        try {
+          const insertStmt = db.prepare(
+            "INSERT OR IGNORE INTO job_events (id,job_id,status,message,created_at) VALUES (?,?,?,?,?)"
+          );
+          for (const ev of detail.events) {
+            insertStmt.run(ev.id || randomUUID(), detail.job.id, ev.status, ev.message, ev.created_at || now());
+          }
+        } catch {}
+      }
     }
     if (detail.email && detail.draft) {
       memEmailSends.set(detail.draft.id, {
@@ -280,6 +291,22 @@ export const store = {
         sentAt: detail.email.sent_at,
         errorMessage: detail.email.error_message,
       });
+      const db = getDb();
+      if (db) {
+        try {
+          db.prepare(
+            "INSERT INTO email_sends (id,draft_id,idempotency_key,provider_message_id,status,sent_at,error_message) VALUES (?,?,?,?,?,?,?) ON CONFLICT(draft_id) DO UPDATE SET status=excluded.status, provider_message_id=excluded.provider_message_id, sent_at=excluded.sent_at, error_message=excluded.error_message"
+          ).run(
+            randomUUID(),
+            detail.draft.id,
+            detail.email.idempotency_key || randomUUID(),
+            detail.email.provider_message_id ?? null,
+            detail.email.status,
+            detail.email.sent_at ?? null,
+            detail.email.error_message ?? null
+          );
+        } catch {}
+      }
     }
   },
 
@@ -516,15 +543,22 @@ export const store = {
     if (db) {
       try {
         const transcript = db.prepare("SELECT text,language,model,created_at FROM transcripts WHERE job_id=?").get(id) as Row | undefined;
-        const events = db.prepare("SELECT status,message,created_at FROM job_events WHERE job_id=? ORDER BY created_at ASC").all(id) as Row[];
-        const draft = this.getDraft(id);
+        let events = db.prepare("SELECT status,message,created_at FROM job_events WHERE job_id=? ORDER BY created_at ASC").all(id) as Row[];
+        const draft = this.getDraft(id) || memDrafts.get(id);
         const email = draft ? db.prepare("SELECT status,provider_message_id,sent_at,error_message FROM email_sends WHERE draft_id=?").get(draft.id) as Row | undefined : undefined;
+
+        if (!events || events.length === 0) {
+          events = (memEvents.get(id) || []) as any;
+        }
+
         return {
           job,
-          transcript: transcript ? { text: String(transcript.text), language: transcript.language as string | undefined, model: String(transcript.model), createdAt: String(transcript.created_at) } : null,
-          draft,
+          transcript: transcript
+            ? { text: String(transcript.text), language: transcript.language as string | undefined, model: String(transcript.model), createdAt: String(transcript.created_at) }
+            : (memTranscripts.get(id) || null),
+          draft: draft || null,
           events,
-          email: email ?? null,
+          email: email ?? (draft ? (memEmailSends.get(draft.id) as any) ?? null : null),
         };
       } catch {}
     }

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 type Config = { frameio: boolean; groq: boolean; claude: boolean; email: boolean; claudeModel: string | null; transcriptionModel: string };
 type Job = { id: string; filename: string; durationSeconds?: number; status: string; isSample: boolean; createdAt: string; updatedAt?: string; errorMessage?: string; draftSubject?: string; recipientEmail?: string };
 type Detail = { job: Job; transcript: { text: string; model: string } | null; draft: Draft | null; events: { status: string; message: string; created_at: string }[]; email: unknown };
-type Draft = { subject: string; previewText: string; headline: string; body: string; closing?: string; recipientEmail?: string; status: string };
+type Draft = { id?: string; subject: string; previewText: string; headline: string; body: string; closing?: string; recipientEmail?: string; status: string; updatedAt?: string };
 type Lang = "en" | "ar";
 type Theme = "light" | "dark";
 
@@ -175,6 +175,15 @@ const i18n = {
 const statusLabel = (s: string) => s.replaceAll("_", " ");
 const fmt = (value: string) =>
   new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+const fmtTime = (value?: string) => {
+  if (!value) return "";
+  try {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? "" : new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "numeric", second: "numeric" }).format(d);
+  } catch {
+    return "";
+  }
+};
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
 export function Dashboard({ initialConfig }: { initialConfig?: Config | null } = {}) {
@@ -412,8 +421,21 @@ function JobPanel({
   lang: Lang;
 }) {
   const [draft, setDraft] = useState<Draft | null>(detail.draft);
-  const [prevDraft, setPrevDraft] = useState<Draft | null>(detail.draft);
-  if (detail.draft !== prevDraft) { setPrevDraft(detail.draft); setDraft(detail.draft); }
+  const [isDirty, setIsDirty] = useState(false);
+
+  // Sync draft from detail safely without wiping to null or overwriting unsaved user input
+  useEffect(() => {
+    const remoteDraft = detail.draft;
+    if (remoteDraft) {
+      setDraft((curr) => {
+        if (!curr) return remoteDraft;
+        if (remoteDraft.id && curr.id && curr.id !== remoteDraft.id) return remoteDraft;
+        if (isDirty) return curr;
+        if (remoteDraft.updatedAt && curr.updatedAt && remoteDraft.updatedAt !== curr.updatedAt) return remoteDraft;
+        return curr;
+      });
+    }
+  }, [detail.draft, isDirty]);
 
   const [panelNotice, setPanelNotice] = useState("");
   const [saving, setSaving] = useState(false);
@@ -426,8 +448,10 @@ function JobPanel({
     items: Array<{ statement: string; isGrounded: boolean; transcriptEvidence?: string }>;
   } | null>(null);
 
-  const set = (key: keyof Draft, value: string) =>
+  const set = (key: keyof Draft, value: string) => {
+    setIsDirty(true);
     setDraft((cur) => (cur ? { ...cur, [key]: value } : cur));
+  };
 
   async function save() {
     if (!draft) return;
@@ -442,6 +466,7 @@ function JobPanel({
         setPanelNotice(data.error);
         setNotice(data.error);
       } else {
+        setIsDirty(false);
         setDraft(data.draft);
         setPanelNotice("Draft saved successfully.");
         setNotice("Draft saved.");
@@ -477,6 +502,7 @@ function JobPanel({
         setPanelNotice(data.error);
         setNotice(data.error);
       } else {
+        setIsDirty(false);
         setPanelNotice("Newsletter sent successfully!");
         setNotice("Email accepted by provider.");
         refresh();
@@ -730,12 +756,24 @@ function JobPanel({
         {/* Event log */}
         <section className="event-log">
           <p className="event-log-title">{t.eventLog}</p>
-          {detail.events.map((event, idx) => (
-            <div key={idx} className="event-item">
-              <b>{statusLabel(event.status)}</b>
-              <span>{event.message}</span>
-            </div>
-          ))}
+          {detail.events.length === 0 ? (
+            <p style={{ opacity: 0.6, fontSize: "0.85rem", margin: "6px 0" }}>
+              {statusLabel(detail.job.status)}
+            </p>
+          ) : (
+            detail.events.map((event, idx) => {
+              const timeStr = fmtTime(event.created_at);
+              return (
+                <div key={idx} className="event-item">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                    <b>{statusLabel(event.status)}</b>
+                    {timeStr && <span style={{ fontSize: "0.75rem", opacity: 0.55 }}>{timeStr}</span>}
+                  </div>
+                  <span>{event.message}</span>
+                </div>
+              );
+            })
+          )}
         </section>
       </div>
 

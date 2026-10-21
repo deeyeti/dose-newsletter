@@ -1,32 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
 import { store } from "@/lib/db";
-import { isSupabaseConfigured, supabaseJobDetail } from "@/lib/supabase";
+import { isSupabaseConfigured, supabaseJobDetail, supabaseUpsertDraft } from "@/lib/supabase";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  let detail = store.jobDetail(id);
-  if (!detail && isSupabaseConfigured()) {
-    const remote = await supabaseJobDetail(id);
-    if (remote) {
-      store.seedDetail(remote);
-      detail = remote;
+  let detail: any = null;
+
+  if (isSupabaseConfigured()) {
+    try {
+      const remote = await supabaseJobDetail(id);
+      if (remote) {
+        detail = remote;
+        const local = store.jobDetail(id);
+        if (local) {
+          if (!detail.transcript && local.transcript) detail.transcript = local.transcript;
+          if (!detail.draft && local.draft) detail.draft = local.draft;
+          if ((!detail.events || detail.events.length === 0) && local.events && local.events.length > 0) {
+            detail.events = local.events;
+          }
+          if (!detail.email && local.email) detail.email = local.email;
+        }
+        store.seedDetail(detail);
+      }
+    } catch (err) {
+      console.warn("[/api/jobs/[id] Supabase query warning]:", err);
     }
   }
+
+  if (!detail) {
+    detail = store.jobDetail(id);
+  }
+
   return detail ? NextResponse.json(detail) : NextResponse.json({ error: "Job not found" }, { status: 404 });
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  let detail = store.jobDetail(id);
-  if (!detail && isSupabaseConfigured()) {
-    const remote = await supabaseJobDetail(id);
-    if (remote) {
-      store.seedDetail(remote);
-      detail = remote;
-    }
+  let detail: any = null;
+  if (isSupabaseConfigured()) {
+    try {
+      const remote = await supabaseJobDetail(id);
+      if (remote) {
+        store.seedDetail(remote);
+        detail = remote;
+      }
+    } catch {}
   }
+  if (!detail) {
+    detail = store.jobDetail(id);
+  }
+
   const job = detail?.job || store.getJob(id);
   if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
 
@@ -45,7 +71,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     closing: body.closing ?? existingDraft?.closing ?? undefined,
     recipientEmail: body.recipientEmail ?? existingDraft?.recipientEmail ?? undefined,
   });
+
+  if (isSupabaseConfigured()) {
+    await supabaseUpsertDraft(saved).catch((err) =>
+      console.warn("[/api/jobs/[id] PATCH supabase save error]:", err)
+    );
+  }
+
   return NextResponse.json({ draft: saved });
 }
+
 
 
