@@ -89,6 +89,12 @@ const i18n = {
     footerLine2: "Dose of Society • Authentic voices from around the world",
     source: "Source",
     issue: "Issue",
+    clearSamples: "Clear sample videos",
+    deleteVideo: "Delete video",
+    confirmDeleteVideo: "Are you sure you want to delete this video?",
+    confirmClearSamples: "Are you sure you want to delete all sample videos?",
+    videoDeleted: "Video removed.",
+    samplesCleared: "All sample videos removed.",
   },
   ar: {
     brand: "Dose Engine",
@@ -168,6 +174,12 @@ const i18n = {
     footerLine2: "Dose of Society • أصوات أصيلة من حول العالم",
     source: "المصدر",
     issue: "العدد",
+    clearSamples: "حذف العينات",
+    deleteVideo: "حذف الفيديو",
+    confirmDeleteVideo: "هل أنت متأكد من حذف هذا الفيديو؟",
+    confirmClearSamples: "هل أنت متأكد من حذف جميع الفيديوهات النموذجية؟",
+    videoDeleted: "تم حذف الفيديو.",
+    samplesCleared: "تم حذف جميع العينات.",
   },
 } as const;
 
@@ -253,6 +265,36 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
     if (data.job?.id) await open(data.job.id);
   }
 
+  async function removeJob(id: string, e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
+    if (!window.confirm(t.confirmDeleteVideo)) return;
+    try {
+      const res = await fetch(`/api/jobs/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        if (detail?.job.id === id) setDetail(null);
+        setJobs((prev) => prev.filter((j) => j.id !== id));
+        setNotice(t.videoDeleted);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setNotice(data.error || "Failed to delete video.");
+      }
+    } catch {
+      setNotice("Failed to delete video.");
+    }
+  }
+
+  async function clearSamples() {
+    const sampleJobs = jobs.filter((j) => j.isSample);
+    if (!sampleJobs.length) return;
+    if (!window.confirm(t.confirmClearSamples)) return;
+    for (const sj of sampleJobs) {
+      await fetch(`/api/jobs/${sj.id}`, { method: "DELETE" }).catch(() => {});
+    }
+    setJobs((prev) => prev.filter((j) => !j.isSample));
+    if (detail?.job.isSample) setDetail(null);
+    setNotice(t.samplesCleared);
+  }
+
   const connections: [string, boolean | undefined][] = [
     ["Frame.io", config?.frameio],
     ["Groq", config?.groq],
@@ -322,15 +364,34 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
             <p className="eyebrow">{t.workspace}</p>
             <h2>{t.recentVideos}</h2>
           </div>
-          <span className="section-header-count">
-            {jobs.length} {jobs.length === 1 ? t.job : t.jobs}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {jobs.some((j) => j.isSample) && (
+              <button
+                className="btn btn-ghost"
+                style={{ padding: "6px 12px", fontSize: "0.85rem", color: "#dc2626" }}
+                onClick={() => void clearSamples()}
+                title={t.clearSamples}
+              >
+                🗑 {t.clearSamples}
+              </button>
+            )}
+            <span className="section-header-count">
+              {jobs.length} {jobs.length === 1 ? t.job : t.jobs}
+            </span>
+          </div>
         </div>
 
         {jobs.length ? (
           <div className="job-list">
             {jobs.map((job) => (
-              <button className="job-row" key={job.id} onClick={() => void open(job.id)}>
+              <div
+                className="job-row"
+                key={job.id}
+                onClick={() => void open(job.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void open(job.id); } }}
+              >
                 <div className="file">
                   <strong>{job.filename}</strong>
                   <small>{fmt(job.createdAt)}{job.isSample ? " · SAMPLE" : ""}</small>
@@ -339,8 +400,17 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
                   {job.durationSeconds ? `${Math.round(job.durationSeconds)}s` : "—"}
                 </div>
                 <span className={`pill ${job.status}`}>{statusLabel(job.status)}</span>
+                <button
+                  type="button"
+                  className="row-delete-btn"
+                  onClick={(e) => void removeJob(job.id, e)}
+                  title={t.deleteVideo}
+                  aria-label={t.deleteVideo}
+                >
+                  🗑
+                </button>
                 <span className="open-arrow">→</span>
-              </button>
+              </div>
             ))}
           </div>
         ) : (
@@ -366,7 +436,14 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
         {sentJobs.length ? (
           <div className="job-list">
             {sentJobs.map((job) => (
-              <button className="job-row" key={`sent-${job.id}`} onClick={() => void open(job.id)}>
+              <div
+                className="job-row"
+                key={`sent-${job.id}`}
+                onClick={() => void open(job.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void open(job.id); } }}
+              >
                 <div className="file">
                   <strong>{job.draftSubject || job.filename}</strong>
                   <small>
@@ -378,8 +455,17 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
                   {job.durationSeconds ? `${Math.round(job.durationSeconds)}s` : "—"}
                 </div>
                 <span className="pill sent">{t.sent}</span>
+                <button
+                  type="button"
+                  className="row-delete-btn"
+                  onClick={(e) => void removeJob(job.id, e)}
+                  title={t.deleteVideo}
+                  aria-label={t.deleteVideo}
+                >
+                  🗑
+                </button>
                 <span className="open-arrow">→</span>
-              </button>
+              </div>
             ))}
           </div>
         ) : (
@@ -399,6 +485,7 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
             detail={detail}
             close={() => setDetail(null)}
             refresh={() => void open(detail.job.id)}
+            onDelete={() => void removeJob(detail.job.id)}
             setNotice={setNotice}
             t={t}
             lang={lang}
@@ -411,11 +498,12 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
 
 // ─── Job Panel ───────────────────────────────────────────────────────────────
 function JobPanel({
-  detail, close, refresh, setNotice, t, lang,
+  detail, close, refresh, onDelete, setNotice, t, lang,
 }: {
   detail: Detail;
   close: () => void;
   refresh: () => void;
+  onDelete: () => void;
   setNotice: (v: string) => void;
   t: typeof i18n[Lang];
   lang: Lang;
@@ -560,7 +648,19 @@ function JobPanel({
             <p className="eyebrow">{t.jobDetail}</p>
             <h2>{detail.job.filename}</h2>
           </div>
-          <button className="icon-btn" onClick={close} aria-label="Close" style={{ fontSize: 20 }}>✕</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              type="button"
+              className="row-delete-btn"
+              onClick={onDelete}
+              aria-label={t.deleteVideo}
+              title={t.deleteVideo}
+              style={{ fontSize: 16 }}
+            >
+              🗑
+            </button>
+            <button className="icon-btn" onClick={close} aria-label="Close" style={{ fontSize: 20 }}>✕</button>
+          </div>
         </div>
 
         {panelNotice && (

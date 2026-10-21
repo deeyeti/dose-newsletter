@@ -3,9 +3,8 @@ import test from "node:test";
 import { NextRequest } from "next/server";
 import { store } from "../lib/db";
 import { GET as getJobs } from "../app/api/jobs/route";
-import { GET as getJobDetail } from "../app/api/jobs/[id]/route";
+import { GET as getJobDetail, PATCH as updateJobDraft, DELETE as deleteJobRoute } from "../app/api/jobs/[id]/route";
 import { POST as sendJobDraft } from "../app/api/jobs/[id]/send/route";
-import { PATCH as updateJobDraft } from "../app/api/jobs/[id]/route";
 import { POST as createSample } from "../app/api/demo/sample/route";
 import { GET as getHealth } from "../app/api/health/route";
 
@@ -55,6 +54,21 @@ test("API: GET /api/jobs/[id] handles valid and invalid IDs", async () => {
 
   // Clean up
   store.deleteJob(job.id);
+});
+
+test("API: DELETE /api/jobs/[id] deletes job and its associated data", async () => {
+  const { job } = store.createJob({ assetId: "delete-route-asset", filename: "to-delete.mp4" });
+  store.setTranscript(job.id, "Transcript to delete", "whisper-large-v3-turbo");
+  store.saveDraft(job.id, { subject: "Sub", previewText: "Prev", headline: "Head", body: "Body" });
+
+  const res = await deleteJobRoute(new NextRequest(`http://localhost/api/jobs/${job.id}`, { method: "DELETE" }), {
+    params: Promise.resolve({ id: job.id }),
+  });
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.equal(data.deleted, true);
+  assert.equal(data.id, job.id);
+  assert.equal(store.getJob(job.id), undefined);
 });
 
 test("API: PATCH /api/jobs/[id] updates draft fields and guards invalid IDs", async () => {
