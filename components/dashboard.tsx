@@ -4,7 +4,7 @@ import { AssistantPanel } from "@/components/assistant-panel";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Config = { frameio: boolean; groq: boolean; claude: boolean; email: boolean; claudeModel: string | null; transcriptionModel: string; supabase?: boolean };
-type Job = { id: string; filename: string; durationSeconds?: number; status: string; isSample: boolean; createdAt: string; errorMessage?: string };
+type Job = { id: string; filename: string; durationSeconds?: number; status: string; isSample: boolean; createdAt: string; updatedAt?: string; errorMessage?: string; draftSubject?: string; recipientEmail?: string };
 type Detail = { job: Job; transcript: { text: string; model: string } | null; draft: Draft | null; events: { status: string; message: string; created_at: string }[]; email: unknown };
 type Draft = { subject: string; previewText: string; headline: string; body: string; closing?: string; recipientEmail?: string; status: string };
 type Lang = "en" | "ar";
@@ -23,7 +23,13 @@ const i18n = {
     connections: "Connections",
     configured: "Configured",
     needsSetup: "Needs setup",
-    configNote: "Add CLAUDE_MODEL before drafting. Groq defaults to",
+    archive: "Archive",
+    sentEmails: "Sent emails",
+    emailCountSingular: "email",
+    emailCountPlural: "emails",
+    noSentEmails: "No sent emails yet.",
+    noSentEmailsSub: "Approved and sent newsletter drafts will be archived here.",
+    to: "To",
     workspace: "Workspace",
     recentVideos: "Recent source videos",
     job: "job",
@@ -97,7 +103,13 @@ const i18n = {
     connections: "الاتصالات",
     configured: "مُهيَّأ",
     needsSetup: "يحتاج إعداداً",
-    configNote: "أضف CLAUDE_MODEL قبل الصياغة. الافتراضي لـ Groq هو",
+    archive: "الأرشيف",
+    sentEmails: "الرسائل المرسلة",
+    emailCountSingular: "رسالة",
+    emailCountPlural: "رسائل",
+    noSentEmails: "لا توجد رسائل مرسلة بعد.",
+    noSentEmailsSub: "ستظهر مسودات النشرات المعتمدة والمُرسلة هنا في الأرشيف.",
+    to: "إلى",
     workspace: "مساحة العمل",
     recentVideos: "مقاطع الفيديو الأخيرة",
     job: "مهمة",
@@ -244,6 +256,8 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
     ["Supabase", config?.supabase],
   ];
 
+  const sentJobs = jobs.filter((j) => j.status === "sent");
+
   return (
     <main className="shell">
       {/* ── Masthead ── */}
@@ -304,9 +318,6 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
             </div>
           ))}
         </div>
-        <p className="config-note">
-          {t.configNote} <code>{config?.transcriptionModel || "whisper-large-v3-turbo"}</code>.
-        </p>
       </section>
 
       {/* ── Jobs ── */}
@@ -341,6 +352,45 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
           <div className="empty">
             <p className="empty-title">{t.noVideos}</p>
             <p className="empty-sub">{t.noVideosSub}</p>
+          </div>
+        )}
+      </section>
+
+      {/* ── Sent emails ── */}
+      <section className="sent-emails">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">{t.archive}</p>
+            <h2>{t.sentEmails}</h2>
+          </div>
+          <span className="section-header-count">
+            {sentJobs.length} {sentJobs.length === 1 ? t.emailCountSingular : t.emailCountPlural}
+          </span>
+        </div>
+
+        {sentJobs.length ? (
+          <div className="job-list">
+            {sentJobs.map((job) => (
+              <button className="job-row" key={`sent-${job.id}`} onClick={() => void open(job.id)}>
+                <div className="file">
+                  <strong>{job.draftSubject || job.filename}</strong>
+                  <small>
+                    {job.recipientEmail ? `${t.to}: ${job.recipientEmail} · ` : ""}
+                    {fmt(job.updatedAt || job.createdAt)} · {job.filename}
+                  </small>
+                </div>
+                <div className="duration">
+                  {job.durationSeconds ? `${Math.round(job.durationSeconds)}s` : "—"}
+                </div>
+                <span className="pill sent">{t.sent}</span>
+                <span className="open-arrow">→</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="empty">
+            <p className="empty-title">{t.noSentEmails}</p>
+            <p className="empty-sub">{t.noSentEmailsSub}</p>
           </div>
         )}
       </section>

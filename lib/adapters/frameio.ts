@@ -87,6 +87,33 @@ export async function getFrameFile(assetId: string): Promise<FrameFile> {
   return asFile(unwrap(await response.json()));
 }
 
+export async function listFrameFiles(): Promise<FrameFile[]> {
+  const accountId = env("FRAMEIO_ACCOUNT_ID"), folderId = env("FRAMEIO_FOLDER_ID");
+  if (!accountId || !folderId) return [];
+  try {
+    const response = await fetch(`https://api.frame.io/v4/accounts/${encodeURIComponent(accountId)}/folders/${encodeURIComponent(folderId)}/files?include=media_links.original&page_size=100`, { headers: await headers(), cache: "no-store" });
+    if (!response.ok) return [];
+    const files = unwrap(await response.json());
+    const list = Array.isArray(files) ? files : files?.data;
+    if (!Array.isArray(list)) return [];
+    return list.map((item: any) => {
+      try {
+        return asFile(item);
+      } catch {
+        return {
+          id: String(item.id),
+          name: String(item.name || "Untitled Frame.io file"),
+          mediaType: item.media_type ? String(item.media_type) : undefined,
+          projectId: item.project_id ? String(item.project_id) : undefined,
+          downloadUrl: item.media_links?.original?.download_url || item.media_links?.original?.inline_url || ""
+        };
+      }
+    });
+  } catch {
+    return [];
+  }
+}
+
 export async function latestFrameFile(): Promise<FrameFile> {
   const accountId = env("FRAMEIO_ACCOUNT_ID"), folderId = env("FRAMEIO_FOLDER_ID");
   if (!accountId || !folderId) throw new Error("Manual check needs FRAMEIO_ACCOUNT_ID and FRAMEIO_FOLDER_ID.");
