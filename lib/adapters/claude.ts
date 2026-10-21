@@ -59,7 +59,7 @@ export async function generateWithClaude(prompt: string, systemPrompt: string = 
   if (workspaceId) {
     reqHeaders["anthropic-workspace-id"] = workspaceId;
   }
-  const request = { model, max_tokens: 4096, temperature: 0.2, system: systemPrompt, messages: [{ role: "user", content: prompt }] };
+  const request = { model, max_tokens: 4096, system: systemPrompt, messages: [{ role: "user", content: prompt }] };
   let lastError: Error | undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
     const response = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: reqHeaders, body: JSON.stringify(request) });
