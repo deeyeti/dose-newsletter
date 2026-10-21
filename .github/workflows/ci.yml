@@ -29,6 +29,19 @@ jobs:
 
       - name: Run test suite
         run: npm test
+        env:
+          EMAIL_PROVIDER: resend
+          EMAIL_API_KEY: re_mock_ci_key
+          EMAIL_FROM: Dose <onboarding@resend.dev>
+          ANTHROPIC_API_KEY: sk-ant-mock-key
+          CLAUDE_MODEL: claude-opus-5-5
+          GROQ_API_KEY: gsk_mock_ci_key
+          SUPABASE_URL: https://fsoxehtneqjgrbrsqhqr.supabase.co
+          SUPABASE_ANON_KEY: mock_anon_key
 
       - name: Build Next.js application
         run: npm run build
+        env:
+          CLAUDE_MODEL: claude-opus-5-5
+          GROQ_TRANSCRIPTION_MODEL: whisper-large-v3-turbo
+

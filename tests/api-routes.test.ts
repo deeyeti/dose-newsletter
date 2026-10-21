@@ -129,8 +129,16 @@ test("API: POST /api/jobs/[id]/send guards missing confirm, bad email, and dupli
   });
   await updateJobDraft(patchReq, { params: Promise.resolve({ id: job.id }) });
 
-  // Mock global.fetch for provider send
+  // Mock global.fetch and set required email env vars for provider send
   const originalFetch = global.fetch;
+  const originalKey = process.env.EMAIL_API_KEY;
+  const originalFrom = process.env.EMAIL_FROM;
+  const originalProvider = process.env.EMAIL_PROVIDER;
+
+  process.env.EMAIL_PROVIDER = "resend";
+  process.env.EMAIL_API_KEY = "re_mock_test_key_456";
+  process.env.EMAIL_FROM = "Dose <demo@example.com>";
+
   global.fetch = (async () =>
     new Response(JSON.stringify({ id: "resend_api_mock_msg_456" }), { status: 200 })) as typeof fetch;
 
@@ -154,10 +162,17 @@ test("API: POST /api/jobs/[id]/send guards missing confirm, bad email, and dupli
   assert.match((await resSecond.json()).error, /already sent/);
 
   global.fetch = originalFetch;
+  if (originalKey !== undefined) process.env.EMAIL_API_KEY = originalKey;
+  else delete process.env.EMAIL_API_KEY;
+  if (originalFrom !== undefined) process.env.EMAIL_FROM = originalFrom;
+  else delete process.env.EMAIL_FROM;
+  if (originalProvider !== undefined) process.env.EMAIL_PROVIDER = originalProvider;
+  else delete process.env.EMAIL_PROVIDER;
 
   // Clean up
   store.deleteJob(job.id);
 });
+
 
 test("API: POST /api/demo/sample creates pre-filled sample job", async () => {
   const res = await createSample();

@@ -51,8 +51,12 @@ test("email failure remains retryable and repeated send is locked", async () => 
   assert.equal(store.beginSend(draft.id).allowed, false);
   store.failSend(draft.id, "Provider unavailable");
   assert.equal(store.beginSend(draft.id).allowed, true);
+  const origKey = process.env.EMAIL_API_KEY;
+  const origFrom = process.env.EMAIL_FROM;
   process.env.EMAIL_PROVIDER = "resend"; process.env.EMAIL_API_KEY = "bad"; process.env.EMAIL_FROM = "Dose <demo@example.com>";
   const original = global.fetch; global.fetch = (async () => new Response("bad", { status: 401 })) as typeof fetch;
   await assert.rejects(() => deliverEmail({ ...draft, recipientEmail: "test@example.com" }, "key"), /Resend did not accept/); global.fetch = original;
-  delete process.env.EMAIL_API_KEY; delete process.env.EMAIL_FROM;
+  if (origKey !== undefined) process.env.EMAIL_API_KEY = origKey; else delete process.env.EMAIL_API_KEY;
+  if (origFrom !== undefined) process.env.EMAIL_FROM = origFrom; else delete process.env.EMAIL_FROM;
 });
+

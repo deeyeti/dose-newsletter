@@ -17,9 +17,9 @@ import {
 
 let DatabaseSyncClass: any = null;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   DatabaseSyncClass = require("node:sqlite").DatabaseSync;
 } catch {
+
   // node:sqlite is not available in some serverless runtimes
 }
 
