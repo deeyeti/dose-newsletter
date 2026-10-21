@@ -1,5 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
 import { store } from "@/lib/db";
+import { isSupabaseConfigured, supabaseJobDetail } from "@/lib/supabase";
+
 export const runtime = "nodejs";
-export function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) { return params.then(({ id }) => { const detail = store.jobDetail(id); return detail ? NextResponse.json(detail) : NextResponse.json({ error: "Job not found" }, { status: 404 }); }); }
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) { const { id } = await params; const detail = store.jobDetail(id); if (!detail?.draft) return NextResponse.json({ error: "Draft not found" }, { status: 404 }); const body = await request.json(); const fields = ["subject", "previewText", "headline", "body", "closing", "recipientEmail"] as const; if (fields.some((key) => key in body && typeof body[key] !== "string")) return NextResponse.json({ error: "Draft fields must be text." }, { status: 400 }); const saved = store.saveDraft(id, { subject: body.subject ?? detail.draft.subject, previewText: body.previewText ?? detail.draft.previewText, headline: body.headline ?? detail.draft.headline, body: body.body ?? detail.draft.body, closing: body.closing ?? detail.draft.closing, recipientEmail: body.recipientEmail ?? detail.draft.recipientEmail }); return NextResponse.json({ draft: saved }); }
+
+export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  let detail = store.jobDetail(id);
+  if (!detail && isSupabaseConfigured()) {
+    const remote = await supabaseJobDetail(id);
+    if (remote) {
+      store.seedDetail(remote);
+      detail = remote;
+    }
+  }
+  return detail ? NextResponse.json(detail) : NextResponse.json({ error: "Job not found" }, { status: 404 });
+}
+
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  let detail = store.jobDetail(id);
+  if (!detail && isSupabaseConfigured()) {
+    const remote = await supabaseJobDetail(id);
+    if (remote) {
+      store.seedDetail(remote);
+      detail = remote;
+    }
+  }
+  if (!detail?.draft) return NextResponse.json({ error: "Draft not found" }, { status: 404 });
+  const body = await request.json();
+  const fields = ["subject", "previewText", "headline", "body", "closing", "recipientEmail"] as const;
+  if (fields.some((key) => key in body && typeof body[key] !== "string")) {
+    return NextResponse.json({ error: "Draft fields must be text." }, { status: 400 });
+  }
+  const saved = store.saveDraft(id, {
+    subject: body.subject ?? detail.draft.subject,
+    previewText: body.previewText ?? detail.draft.previewText,
+    headline: body.headline ?? detail.draft.headline,
+    body: body.body ?? detail.draft.body,
+    closing: body.closing ?? detail.draft.closing,
+    recipientEmail: body.recipientEmail ?? detail.draft.recipientEmail,
+  });
+  return NextResponse.json({ draft: saved });
+}
+

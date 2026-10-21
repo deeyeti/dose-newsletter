@@ -23,18 +23,9 @@ export async function POST() {
       return NextResponse.json({ job, created, message: "Checked Frame.io." });
     }
 
-    const currentAssetIds = new Set(files.map((f) => f.id));
-
-    // Prune deleted jobs
-    const allJobs = store.listJobs();
-    for (const job of allJobs) {
-      if (!job.isSample && !currentAssetIds.has(job.frameioAssetId)) {
-        store.deleteJob(job.id);
-      }
-    }
-
     let queuedCount = 0;
     let latestJob = null;
+
 
     for (const file of files) {
       const { job, created } = store.createJob({

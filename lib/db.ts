@@ -3,6 +3,17 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { env } from "@/lib/env";
 import type { DraftInput, Job, JobStatus, NewsletterDraft } from "@/lib/types";
+import {
+  isSupabaseConfigured,
+  supabaseUpsertJob,
+  supabaseUpsertTranscript,
+  supabaseUpsertDraft,
+  supabaseUpsertEmailSend,
+  supabaseInsertEvent,
+  supabaseDeleteJob,
+  supabaseRecordWebhook,
+} from "@/lib/supabase";
+
 
 let DatabaseSyncClass: any = null;
 try {
@@ -191,6 +202,87 @@ export const store = {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
+  seedJob(job: Job) {
+    memJobs.set(job.id, job);
+    const db = getDb();
+    if (db) {
+      try {
+        db.prepare(
+          "INSERT OR IGNORE INTO jobs (id,frameio_asset_id,frameio_project_id,filename,media_type,status,is_sample,error_code,error_message,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+        ).run(
+          job.id,
+          job.frameioAssetId,
+          job.frameioProjectId ?? null,
+          job.filename,
+          job.mediaType ?? null,
+          job.status,
+          job.isSample ? 1 : 0,
+          job.errorCode ?? null,
+          job.errorMessage ?? null,
+          job.createdAt,
+          job.updatedAt
+        );
+      } catch {}
+    }
+  },
+
+  seedDetail(detail: { job: Job; transcript: any; draft: NewsletterDraft | null; events: any[]; email: any }) {
+    this.seedJob(detail.job);
+    if (detail.draft) {
+      memDrafts.set(detail.job.id, detail.draft);
+      const db = getDb();
+      if (db) {
+        try {
+          db.prepare(
+            "INSERT OR IGNORE INTO drafts (id,job_id,subject,preview_text,headline,body,closing,recipient_email,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?, 'draft',?,?)"
+          ).run(
+            detail.draft.id,
+            detail.draft.jobId,
+            detail.draft.subject,
+            detail.draft.previewText,
+            detail.draft.headline,
+            detail.draft.body,
+            detail.draft.closing ?? null,
+            detail.draft.recipientEmail ?? null,
+            detail.draft.updatedAt,
+            detail.draft.updatedAt
+          );
+        } catch {}
+      }
+    }
+    if (detail.transcript) {
+      memTranscripts.set(detail.job.id, detail.transcript);
+      const db = getDb();
+      if (db) {
+        try {
+          db.prepare(
+            "INSERT OR IGNORE INTO transcripts (id,job_id,text,language,provider,model,created_at) VALUES (?,?,?,?,?,?,?)"
+          ).run(
+            randomUUID(),
+            detail.job.id,
+            detail.transcript.text,
+            detail.transcript.language ?? null,
+            "groq",
+            detail.transcript.model,
+            detail.transcript.createdAt
+          );
+        } catch {}
+      }
+    }
+    if (detail.events && detail.events.length > 0) {
+      memEvents.set(detail.job.id, detail.events);
+    }
+    if (detail.email && detail.draft) {
+      memEmailSends.set(detail.draft.id, {
+        idempotencyKey: detail.email.idempotency_key || randomUUID(),
+        status: detail.email.status,
+        providerMessageId: detail.email.provider_message_id,
+        sentAt: detail.email.sent_at,
+        errorMessage: detail.email.error_message,
+      });
+    }
+  },
+
   deleteJob(id: string) {
     const db = getDb();
     if (db) {
@@ -213,6 +305,10 @@ export const store = {
     memEvents.delete(id);
     memTranscripts.delete(id);
     memJobs.delete(id);
+
+    if (isSupabaseConfigured()) {
+      void supabaseDeleteJob(id);
+    }
   },
 
   getJob(id: string) {
@@ -264,21 +360,30 @@ export const store = {
     };
     memJobs.set(id, job);
 
+    if (isSupabaseConfigured()) {
+      void supabaseUpsertJob(job);
+    }
+
     this.event(id, "received", input.sample ? "Created labelled sample job." : "Webhook or manual check received asset.");
     return { job, created: true };
   },
 
   event(jobId: string, status: string, message: string) {
     const time = now();
+    const eventId = randomUUID();
     const db = getDb();
     if (db) {
       try {
-        db.prepare("INSERT INTO job_events (id,job_id,status,message,created_at) VALUES (?,?,?,?,?)").run(randomUUID(), jobId, status, message, time);
+        db.prepare("INSERT INTO job_events (id,job_id,status,message,created_at) VALUES (?,?,?,?,?)").run(eventId, jobId, status, message, time);
       } catch {}
     }
     const list = memEvents.get(jobId) || [];
     list.push({ status, message, created_at: time });
     memEvents.set(jobId, list);
+
+    if (isSupabaseConfigured()) {
+      void supabaseInsertEvent({ id: eventId, jobId, status, message, createdAt: time });
+    }
   },
 
   setJob(jobId: string, status: JobStatus, fields: { durationSeconds?: number; errorCode?: string | null; errorMessage?: string | null } = {}) {
@@ -296,6 +401,10 @@ export const store = {
       if (fields.errorCode !== undefined) job.errorCode = fields.errorCode || undefined;
       if (fields.errorMessage !== undefined) job.errorMessage = fields.errorMessage || undefined;
       job.updatedAt = time;
+
+      if (isSupabaseConfigured()) {
+        void supabaseUpsertJob(job);
+      }
     }
     this.event(jobId, status, fields.errorMessage || status.replaceAll("_", " "));
   },
@@ -314,8 +423,13 @@ export const store = {
       if (metadata.mediaType) job.mediaType = metadata.mediaType;
       if (metadata.projectId) job.frameioProjectId = metadata.projectId;
       job.updatedAt = time;
+
+      if (isSupabaseConfigured()) {
+        void supabaseUpsertJob(job);
+      }
     }
   },
+
 
   fail(jobId: string, code: string, message: string) {
     this.setJob(jobId, "failed", { errorCode: code, errorMessage: message });
@@ -330,6 +444,20 @@ export const store = {
       } catch {}
     }
     memTranscripts.set(jobId, { text, language, model, createdAt: time });
+
+    if (isSupabaseConfigured()) {
+      const job = this.getJob(jobId);
+      void supabaseUpsertTranscript({
+        id: randomUUID(),
+        jobId,
+        text,
+        language,
+        model,
+        assetId: job?.frameioAssetId,
+        filename: job?.filename,
+        createdAt: time,
+      });
+    }
   },
 
   saveDraft(jobId: string, draft: DraftInput) {
@@ -362,6 +490,11 @@ export const store = {
       updatedAt: time,
     };
     memDrafts.set(jobId, draftObj);
+
+    if (isSupabaseConfigured()) {
+      void supabaseUpsertDraft(draftObj);
+    }
+
     return draftObj;
   },
 
@@ -411,6 +544,9 @@ export const store = {
     if (db) {
       try {
         db.prepare("INSERT INTO webhook_events (provider_event_id,asset_id,event_type,verified,received_at,processing_status) VALUES (?,?,?,?,?,?)").run(eventId, assetId, type, verified ? 1 : 0, time, "accepted");
+        if (isSupabaseConfigured()) {
+          void supabaseRecordWebhook(eventId, assetId, type, verified);
+        }
         return true;
       } catch {
         return false;
@@ -418,6 +554,9 @@ export const store = {
     }
     if (memWebhooks.has(eventId)) return false;
     memWebhooks.add(eventId);
+    if (isSupabaseConfigured()) {
+      void supabaseRecordWebhook(eventId, assetId, type, verified);
+    }
     return true;
   },
 
@@ -436,6 +575,15 @@ export const store = {
         }
         db.prepare("UPDATE drafts SET status='sending',updated_at=? WHERE id=?").run(now(), draftId);
         memEmailSends.set(draftId, { idempotencyKey: key, status: "sending" });
+
+        if (isSupabaseConfigured()) {
+          void supabaseUpsertEmailSend({
+            id: randomUUID(),
+            draftId,
+            idempotencyKey: key,
+            status: "sending",
+          });
+        }
         return { allowed: true, key };
       } catch {}
     }
@@ -443,6 +591,15 @@ export const store = {
     if (existingMem?.status === "sent") return { allowed: false, reason: "already_sent" };
     if (existingMem?.status === "sending") return { allowed: false, reason: "sending" };
     memEmailSends.set(draftId, { idempotencyKey: key, status: "sending" });
+
+    if (isSupabaseConfigured()) {
+      void supabaseUpsertEmailSend({
+        id: randomUUID(),
+        draftId,
+        idempotencyKey: key,
+        status: "sending",
+      });
+    }
     return { allowed: true, key };
   },
 
@@ -461,6 +618,17 @@ export const store = {
       mem.providerMessageId = providerId;
       mem.sentAt = time;
     }
+
+    if (isSupabaseConfigured()) {
+      void supabaseUpsertEmailSend({
+        id: randomUUID(),
+        draftId,
+        idempotencyKey: "sent",
+        status: "sent",
+        providerMessageId: providerId,
+        sentAt: time,
+      });
+    }
   },
 
   failSend(draftId: string, message: string) {
@@ -477,5 +645,16 @@ export const store = {
       mem.status = "failed";
       mem.errorMessage = message;
     }
+
+    if (isSupabaseConfigured()) {
+      void supabaseUpsertEmailSend({
+        id: randomUUID(),
+        draftId,
+        idempotencyKey: "failed",
+        status: "failed",
+        errorMessage: message,
+      });
+    }
   },
+
 };
