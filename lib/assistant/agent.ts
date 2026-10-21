@@ -79,7 +79,6 @@ async function runClaudeAgent(messages: ChatMessage[]): Promise<AssistantRespons
     const payload = {
       model,
       max_tokens: 2500,
-      temperature: 0.2,
       system: SYSTEM_PROMPT,
       tools,
       messages: anthropicMessages,

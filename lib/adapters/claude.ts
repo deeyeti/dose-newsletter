@@ -62,7 +62,6 @@ export async function generateWithClaude(prompt: string, systemPrompt: string = 
   const request = {
     model,
     max_tokens: 2500,
-    temperature: 0.2,
     system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
   };
