@@ -113,7 +113,7 @@ export async function supabaseJobDetail(jobId: string): Promise<any | null> {
 
   try {
     const res = await fetch(
-      `${creds.url}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}&select=*,transcripts(*),drafts(*,email_sends(*)),job_events(*)`,
+      `${creds.url}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}&select=*,transcripts(*),drafts(*,email_sends(*)),job_events(*)&job_events.order=created_at.asc`,
       { headers: creds.headers, cache: "no-store" }
     );
     if (!res.ok) return null;
@@ -169,6 +169,7 @@ export async function supabaseJobDetail(jobId: string): Promise<any | null> {
           }
         : null,
       events: events.map((e: any) => ({
+        id: e.id ? String(e.id) : undefined,
         status: String(e.status),
         message: String(e.message),
         created_at: String(e.created_at),
