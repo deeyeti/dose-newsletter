@@ -27,20 +27,25 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       detail = remote;
     }
   }
-  if (!detail?.draft) return NextResponse.json({ error: "Draft not found" }, { status: 404 });
+  const job = detail?.job || store.getJob(id);
+  if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+
   const body = await request.json();
   const fields = ["subject", "previewText", "headline", "body", "closing", "recipientEmail"] as const;
   if (fields.some((key) => key in body && typeof body[key] !== "string")) {
     return NextResponse.json({ error: "Draft fields must be text." }, { status: 400 });
   }
+
+  const existingDraft = detail?.draft || store.getDraft(id);
   const saved = store.saveDraft(id, {
-    subject: body.subject ?? detail.draft.subject,
-    previewText: body.previewText ?? detail.draft.previewText,
-    headline: body.headline ?? detail.draft.headline,
-    body: body.body ?? detail.draft.body,
-    closing: body.closing ?? detail.draft.closing,
-    recipientEmail: body.recipientEmail ?? detail.draft.recipientEmail,
+    subject: body.subject ?? existingDraft?.subject ?? "Newsletter Draft",
+    previewText: body.previewText ?? existingDraft?.previewText ?? "",
+    headline: body.headline ?? existingDraft?.headline ?? "Newsletter",
+    body: body.body ?? existingDraft?.body ?? "",
+    closing: body.closing ?? existingDraft?.closing ?? undefined,
+    recipientEmail: body.recipientEmail ?? existingDraft?.recipientEmail ?? undefined,
   });
   return NextResponse.json({ draft: saved });
 }
+
 

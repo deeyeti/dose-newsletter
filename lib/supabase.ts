@@ -113,7 +113,7 @@ export async function supabaseJobDetail(jobId: string): Promise<any | null> {
 
   try {
     const res = await fetch(
-      `${creds.url}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}&select=*,transcripts(*),drafts(*),job_events(*),email_sends(*)`,
+      `${creds.url}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}&select=*,transcripts(*),drafts(*,email_sends(*)),job_events(*)`,
       { headers: creds.headers, cache: "no-store" }
     );
     if (!res.ok) return null;
@@ -123,8 +123,11 @@ export async function supabaseJobDetail(jobId: string): Promise<any | null> {
 
     const transcript = Array.isArray(r.transcripts) ? r.transcripts[0] : r.transcripts;
     const draft = Array.isArray(r.drafts) ? r.drafts[0] : r.drafts;
-    const email = Array.isArray(r.email_sends) ? r.email_sends[0] : r.email_sends;
+    const email = draft?.email_sends
+      ? (Array.isArray(draft.email_sends) ? draft.email_sends[0] : draft.email_sends)
+      : (Array.isArray(r.email_sends) ? r.email_sends[0] : r.email_sends);
     const events = Array.isArray(r.job_events) ? r.job_events : [];
+
 
     const job: Job = {
       id: String(r.id),
@@ -384,6 +387,7 @@ export async function supabaseUpsertDraft(draft: NewsletterDraft): Promise<void>
 export async function supabaseUpsertEmailSend(send: {
   id: string;
   draftId: string;
+  jobId?: string;
   idempotencyKey: string;
   status: string;
   providerMessageId?: string;
@@ -400,6 +404,7 @@ export async function supabaseUpsertEmailSend(send: {
       body: JSON.stringify({
         id: send.id,
         draft_id: send.draftId,
+        job_id: send.jobId ?? null,
         idempotency_key: send.idempotencyKey,
         provider_message_id: send.providerMessageId ?? null,
         sent_at: send.sentAt ?? null,
@@ -411,6 +416,7 @@ export async function supabaseUpsertEmailSend(send: {
     console.warn("[supabase] upsertEmailSend failed:", err);
   }
 }
+
 
 export async function supabaseInsertEvent(event: {
   id: string;
