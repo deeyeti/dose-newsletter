@@ -109,8 +109,8 @@ body {
 .config-note { font-size: 12px; color: var(--text-3); margin-top: 12px; }
 .config-note code { font-family: 'SF Mono', 'Fira Code', monospace; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--text-2); font-size: 11px; }
 
-/* Jobs */
-.jobs { padding-top: 48px; }
+/* Jobs & Sent emails */
+.jobs, .sent-emails { padding-top: 48px; }
 .section-header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .section-header h2 { font-family: var(--font-serif, Georgia, serif); font-size: 26px; font-weight: 500; letter-spacing: -0.02em; color: var(--text-1); margin-top: 4px; }
 .section-header-count { font-size: 12px; color: var(--text-3); white-space: nowrap; }

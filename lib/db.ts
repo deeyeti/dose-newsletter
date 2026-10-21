@@ -133,7 +133,22 @@ function getDb(): any {
 const now = () => new Date().toISOString();
 
 type Row = Record<string, unknown>;
-const toJob = (r: Row): Job => ({ id: String(r.id), frameioAssetId: String(r.frameio_asset_id), frameioProjectId: r.frameio_project_id ? String(r.frameio_project_id) : undefined, filename: String(r.filename), mediaType: r.media_type ? String(r.media_type) : undefined, durationSeconds: r.duration_seconds == null ? undefined : Number(r.duration_seconds), status: r.status as JobStatus, isSample: Boolean(r.is_sample), errorCode: r.error_code ? String(r.error_code) : undefined, errorMessage: r.error_message ? String(r.error_message) : undefined, createdAt: String(r.created_at), updatedAt: String(r.updated_at) });
+const toJob = (r: Row): Job => ({
+  id: String(r.id),
+  frameioAssetId: String(r.frameio_asset_id),
+  frameioProjectId: r.frameio_project_id ? String(r.frameio_project_id) : undefined,
+  filename: String(r.filename),
+  mediaType: r.media_type ? String(r.media_type) : undefined,
+  durationSeconds: r.duration_seconds == null ? undefined : Number(r.duration_seconds),
+  status: r.status as JobStatus,
+  isSample: Boolean(r.is_sample),
+  errorCode: r.error_code ? String(r.error_code) : undefined,
+  errorMessage: r.error_message ? String(r.error_message) : undefined,
+  createdAt: String(r.created_at),
+  updatedAt: String(r.updated_at),
+  draftSubject: r.draft_subject ? String(r.draft_subject) : undefined,
+  recipientEmail: r.draft_recipient ? String(r.draft_recipient) : undefined,
+});
 const toDraft = (r: Row): NewsletterDraft => ({ id: String(r.id), jobId: String(r.job_id), subject: String(r.subject), previewText: String(r.preview_text), headline: String(r.headline), body: String(r.body), closing: r.closing ? String(r.closing) : undefined, recipientEmail: r.recipient_email ? String(r.recipient_email) : undefined, status: r.status as NewsletterDraft["status"], updatedAt: String(r.updated_at) });
 
 // In-memory fallbacks for serverless environments where SQLite is unavailable
@@ -145,16 +160,59 @@ const memWebhooks = new Set<string>();
 const memEmailSends = new Map<string, { idempotencyKey: string; status: string; providerMessageId?: string; sentAt?: string; errorMessage?: string }>();
 
 export const store = {
-  listJobs() {
+  listJobs(): Job[] {
     const db = getDb();
     if (db) {
       try {
-        return (db.prepare("SELECT * FROM jobs ORDER BY created_at DESC LIMIT 50").all() as Row[]).map(toJob);
+        const rows = db.prepare(`
+          SELECT 
+            j.*,
+            d.subject AS draft_subject,
+            d.recipient_email AS draft_recipient
+          FROM jobs j
+          LEFT JOIN drafts d ON d.job_id = j.id
+          ORDER BY j.created_at DESC
+          LIMIT 50
+        `).all() as Row[];
+        return rows.map(toJob);
       } catch (err) {
         console.error("[db] listJobs query failed:", err);
       }
     }
-    return Array.from(memJobs.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return Array.from(memJobs.values())
+      .map((job) => {
+        const draft = memDrafts.get(job.id);
+        return {
+          ...job,
+          draftSubject: draft?.subject,
+          recipientEmail: draft?.recipientEmail,
+        };
+      })
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  deleteJob(id: string) {
+    const db = getDb();
+    if (db) {
+      try {
+        const draft = this.getDraft(id);
+        if (draft) {
+          db.prepare("DELETE FROM email_sends WHERE draft_id=?").run(draft.id);
+          db.prepare("DELETE FROM drafts WHERE id=?").run(draft.id);
+        }
+        db.prepare("DELETE FROM job_events WHERE job_id=?").run(id);
+        db.prepare("DELETE FROM transcripts WHERE job_id=?").run(id);
+        db.prepare("DELETE FROM jobs WHERE id=?").run(id);
+      } catch {}
+    }
+    const memDraft = memDrafts.get(id);
+    if (memDraft) {
+      memEmailSends.delete(memDraft.id);
+      memDrafts.delete(id);
+    }
+    memEvents.delete(id);
+    memTranscripts.delete(id);
+    memJobs.delete(id);
   },
 
   getJob(id: string) {

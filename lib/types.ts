@@ -14,5 +14,5 @@ export type NewsletterDraft = DraftInput & { id: string; jobId: string; status: 
 export type Job = {
   id: string; frameioAssetId: string; frameioProjectId?: string; filename: string; mediaType?: string;
   durationSeconds?: number; status: JobStatus; isSample: boolean; errorCode?: string; errorMessage?: string;
-  createdAt: string; updatedAt: string;
+  createdAt: string; updatedAt: string; draftSubject?: string; recipientEmail?: string;
 };
