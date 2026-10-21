@@ -9,6 +9,9 @@
     "lint": "eslint .",
     "test": "tsx --test tests/**/*.test.ts"
   },
+  "engines": {
+    "node": ">=22.x"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
     "next": "^16.1.1",
