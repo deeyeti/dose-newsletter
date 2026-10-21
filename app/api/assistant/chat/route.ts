@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { askAssistant, ChatMessage } from "@/lib/assistant/agent";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
