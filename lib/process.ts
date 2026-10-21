@@ -11,7 +11,15 @@ import { transcribeWithGroq } from "@/lib/adapters/groq";
 import { writeNewsletter } from "@/lib/adapters/claude";
 import fsSync from "node:fs";
 import { rejectLongVideo } from "@/lib/guards";
-import { isSupabaseConfigured, supabaseFindTranscript, supabaseJobDetail } from "@/lib/supabase";
+import {
+  isSupabaseConfigured,
+  supabaseFindTranscript,
+  supabaseJobDetail,
+  supabaseUpsertJob,
+  supabaseUpsertTranscript,
+  supabaseUpsertDraft,
+  supabaseInsertEvent,
+} from "@/lib/supabase";
 
 
 const exec = promisify(execFile);
@@ -82,7 +90,7 @@ export async function processSample(jobId: string) {
   store.setJob(jobId, "transcribing", { durationSeconds: 42 });
   store.setTranscript(jobId, SAMPLE_TRANSCRIPT, "sample transcript", "en");
   store.setJob(jobId, "drafting");
-  store.saveDraft(jobId, {
+  const draft = store.saveDraft(jobId, {
     subject: "What we choose to hold on to",
     previewText: "A small act of repair can carry a much larger story.",
     headline: "The life still left in a jacket",
@@ -91,6 +99,29 @@ export async function processSample(jobId: string) {
     recipientEmail: env("DEMO_RECIPIENT_EMAIL") || undefined,
   });
   store.setJob(jobId, "ready_for_review");
+
+  if (isSupabaseConfigured()) {
+    const updatedJob = store.getJob(jobId);
+    if (updatedJob) await supabaseUpsertJob(updatedJob);
+    await supabaseUpsertTranscript({
+      id: randomUUID(),
+      jobId,
+      text: SAMPLE_TRANSCRIPT,
+      language: "en",
+      model: "sample transcript",
+      assetId: job.frameioAssetId,
+      filename: job.filename,
+      createdAt: new Date().toISOString(),
+    });
+    await supabaseUpsertDraft(draft);
+    await supabaseInsertEvent({
+      id: randomUUID(),
+      jobId,
+      status: "ready_for_review",
+      message: "Ready for review",
+      createdAt: new Date().toISOString(),
+    });
+  }
 }
 
 export async function processLiveJob(jobId: string) {

@@ -83,7 +83,7 @@ test("video duration guard rejects invalid and boundary inputs", () => {
 // 3. Store Deletion, Cascades, and Listing Edge Cases
 // ─────────────────────────────────────────────────────────────────────────────
 
-test("store deleteJob cleanly cascades and cleans up all related records", () => {
+test("store deleteJob cleanly cascades and cleans up all related records", async () => {
   const { job } = store.createJob({ assetId: "cascade-asset-1", filename: "cascade.mp4" });
   store.setTranscript(job.id, "Transcript for cascade test", "whisper-large-v3-turbo");
   const draft = store.saveDraft(job.id, {
@@ -103,7 +103,7 @@ test("store deleteJob cleanly cascades and cleans up all related records", () =>
   assert.ok((store.jobDetail(job.id)?.events.length ?? 0) > 0);
 
   // Execute deleteJob
-  store.deleteJob(job.id);
+  await store.deleteJob(job.id);
 
   // Verify all records were removed
   assert.equal(store.getJob(job.id), undefined);
@@ -112,10 +112,10 @@ test("store deleteJob cleanly cascades and cleans up all related records", () =>
   assert.equal(store.listJobs().some((j) => j.id === job.id), false);
 
   // Calling deleteJob on non-existent ID does not throw
-  assert.doesNotThrow(() => store.deleteJob("non-existent-id"));
+  await assert.doesNotReject(async () => { await store.deleteJob("non-existent-id"); });
 });
 
-test("store listJobs attaches draft metadata when draft exists", () => {
+test("store listJobs attaches draft metadata when draft exists", async () => {
   const { job } = store.createJob({ assetId: "metadata-asset", filename: "metadata.mp4" });
   store.saveDraft(job.id, {
     subject: "Special Subject Line",
@@ -132,7 +132,7 @@ test("store listJobs attaches draft metadata when draft exists", () => {
   assert.equal(found.recipientEmail, "reader@example.com");
 
   // Clean up
-  store.deleteJob(job.id);
+  await store.deleteJob(job.id);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

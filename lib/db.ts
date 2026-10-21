@@ -24,13 +24,17 @@ try {
 }
 
 const isVercel = Boolean(process.env.VERCEL);
-const dbPath = isVercel
-  ? "/tmp/dose-engine.db"
-  : (env("DATABASE_PATH")
-      ? path.resolve(/*turbopackIgnore: true*/ process.cwd(), env("DATABASE_PATH"))
-      : path.resolve(/*turbopackIgnore: true*/ process.cwd(), ".data/dose-engine.db"));
+const isTest = process.env.NODE_ENV === "test" || process.env.npm_lifecycle_event === "test";
+const shouldSyncSupabase = () => isSupabaseConfigured() && !isTest;
+const dbPath = isTest
+  ? ":memory:"
+  : (isVercel
+      ? "/tmp/dose-engine.db"
+      : (env("DATABASE_PATH")
+          ? path.resolve(/*turbopackIgnore: true*/ process.cwd(), env("DATABASE_PATH"))
+          : path.resolve(/*turbopackIgnore: true*/ process.cwd(), ".data/dose-engine.db")));
 
-if (!isVercel) {
+if (!isVercel && dbPath !== ":memory:") {
   try {
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   } catch {}
@@ -106,11 +110,13 @@ function createDbConnection(): any {
     try {
       const db = new DatabaseSyncClass(dbPath);
       db.exec("PRAGMA busy_timeout = 20000;");
-      try {
-        db.exec("PRAGMA journal_mode = WAL;");
-      } catch (walErr: unknown) {
-        const msg = walErr instanceof Error ? walErr.message : String(walErr);
-        if (!msg.includes("locked") && !msg.includes("busy")) throw walErr;
+      if (dbPath !== ":memory:") {
+        try {
+          db.exec("PRAGMA journal_mode = WAL;");
+        } catch (walErr: unknown) {
+          const msg = walErr instanceof Error ? walErr.message : String(walErr);
+          if (!msg.includes("locked") && !msg.includes("busy")) throw walErr;
+        }
       }
       db.exec(SCHEMA_SQL);
       return db;
@@ -310,7 +316,7 @@ export const store = {
     }
   },
 
-  deleteJob(id: string) {
+  async deleteJob(id: string) {
     const db = getDb();
     if (db) {
       try {
@@ -334,7 +340,7 @@ export const store = {
     memJobs.delete(id);
 
     if (isSupabaseConfigured()) {
-      void supabaseDeleteJob(id);
+      await supabaseDeleteJob(id).catch(() => {});
     }
   },
 
@@ -387,7 +393,7 @@ export const store = {
     };
     memJobs.set(id, job);
 
-    if (isSupabaseConfigured()) {
+    if (shouldSyncSupabase()) {
       void supabaseUpsertJob(job);
     }
 
@@ -408,7 +414,7 @@ export const store = {
     list.push({ status, message, created_at: time });
     memEvents.set(jobId, list);
 
-    if (isSupabaseConfigured()) {
+    if (shouldSyncSupabase()) {
       void supabaseInsertEvent({ id: eventId, jobId, status, message, createdAt: time });
     }
   },
@@ -429,7 +435,7 @@ export const store = {
       if (fields.errorMessage !== undefined) job.errorMessage = fields.errorMessage || undefined;
       job.updatedAt = time;
 
-      if (isSupabaseConfigured()) {
+      if (shouldSyncSupabase()) {
         void supabaseUpsertJob(job);
       }
     }
@@ -451,7 +457,7 @@ export const store = {
       if (metadata.projectId) job.frameioProjectId = metadata.projectId;
       job.updatedAt = time;
 
-      if (isSupabaseConfigured()) {
+      if (shouldSyncSupabase()) {
         void supabaseUpsertJob(job);
       }
     }
@@ -472,7 +478,7 @@ export const store = {
     }
     memTranscripts.set(jobId, { text, language, model, createdAt: time });
 
-    if (isSupabaseConfigured()) {
+    if (shouldSyncSupabase()) {
       const job = this.getJob(jobId);
       void supabaseUpsertTranscript({
         id: randomUUID(),
@@ -518,7 +524,7 @@ export const store = {
     };
     memDrafts.set(jobId, draftObj);
 
-    if (isSupabaseConfigured()) {
+    if (shouldSyncSupabase()) {
       void supabaseUpsertDraft(draftObj);
     }
 
@@ -578,7 +584,7 @@ export const store = {
     if (db) {
       try {
         db.prepare("INSERT INTO webhook_events (provider_event_id,asset_id,event_type,verified,received_at,processing_status) VALUES (?,?,?,?,?,?)").run(eventId, assetId, type, verified ? 1 : 0, time, "accepted");
-        if (isSupabaseConfigured()) {
+        if (shouldSyncSupabase()) {
           void supabaseRecordWebhook(eventId, assetId, type, verified);
         }
         return true;
@@ -588,7 +594,7 @@ export const store = {
     }
     if (memWebhooks.has(eventId)) return false;
     memWebhooks.add(eventId);
-    if (isSupabaseConfigured()) {
+    if (shouldSyncSupabase()) {
       void supabaseRecordWebhook(eventId, assetId, type, verified);
     }
     return true;
@@ -611,7 +617,7 @@ export const store = {
         memEmailSends.set(draftId, { idempotencyKey: key, status: "sending" });
 
         const draftObj = Array.from(memDrafts.values()).find((d) => d.id === draftId);
-        if (isSupabaseConfigured()) {
+        if (shouldSyncSupabase()) {
           void supabaseUpsertEmailSend({
             id: randomUUID(),
             draftId,
@@ -629,7 +635,7 @@ export const store = {
     memEmailSends.set(draftId, { idempotencyKey: key, status: "sending" });
 
     const draftObj = Array.from(memDrafts.values()).find((d) => d.id === draftId);
-    if (isSupabaseConfigured()) {
+    if (shouldSyncSupabase()) {
       void supabaseUpsertEmailSend({
         id: randomUUID(),
         draftId,
@@ -658,7 +664,7 @@ export const store = {
     }
 
     const draftObj = Array.from(memDrafts.values()).find((d) => d.id === draftId);
-    if (isSupabaseConfigured()) {
+    if (shouldSyncSupabase()) {
       void supabaseUpsertEmailSend({
         id: randomUUID(),
         draftId,
@@ -687,7 +693,7 @@ export const store = {
     }
 
     const draftObj = Array.from(memDrafts.values()).find((d) => d.id === draftId);
-    if (isSupabaseConfigured()) {
+    if (shouldSyncSupabase()) {
       void supabaseUpsertEmailSend({
         id: randomUUID(),
         draftId,
