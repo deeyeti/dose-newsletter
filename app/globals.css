@@ -280,3 +280,281 @@ body {
 .confirm-box h3 { font-family: var(--font-serif, Georgia, serif); font-size: 24px; font-weight: 500; color: var(--text-1); margin-bottom: 8px; }
 .confirm-box p { font-size: 14px; color: var(--text-2); line-height: 1.5; margin-bottom: 20px; }
 .confirm-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+/* Beehiiv Management Card */
+.beehiiv-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-top: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+  transition: border-color var(--t);
+}
+.beehiiv-card:hover {
+  border-color: var(--border-strong);
+}
+.beehiiv-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.beehiiv-head-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-2);
+}
+.beehiiv-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.beehiiv-badge.draft {
+  background: var(--surface-3);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+}
+.beehiiv-badge.scheduled {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border: 1px solid rgba(146, 64, 14, 0.25);
+}
+.beehiiv-badge.confirmed, .beehiiv-badge.published {
+  background: var(--ok-bg);
+  color: var(--ok);
+  border: 1px solid rgba(22, 101, 52, 0.25);
+}
+.beehiiv-body {
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+.beehiiv-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+.beehiiv-metric-box {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.beehiiv-metric-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.beehiiv-metric-value {
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-1);
+  line-height: 1.1;
+}
+.beehiiv-metric-sub {
+  font-size: 10px;
+  color: var(--text-3);
+}
+.beehiiv-controls-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.beehiiv-mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.beehiiv-mode-btn {
+  appearance: none;
+  background: var(--surface);
+  color: var(--text-2);
+  border: 0;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--t);
+  border-right: 1px solid var(--border);
+}
+.beehiiv-mode-btn:last-child {
+  border-right: 0;
+}
+.beehiiv-mode-btn.active {
+  background: var(--brand);
+  color: #fff;
+}
+.beehiiv-date-input {
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-1);
+}
+
+/* ── Beehiiv Audience & Subscribers ── */
+.beehiiv-audience {
+  padding-top: 48px;
+}
+.beehiiv-audience-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.beehiiv-sub-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.beehiiv-sub-input-wrap {
+  position: relative;
+  flex: 1 1 280px;
+  display: flex;
+  align-items: center;
+}
+.beehiiv-sub-icon {
+  position: absolute;
+  inset-inline-start: 12px;
+  color: var(--text-3);
+  font-size: 14px;
+  pointer-events: none;
+}
+.beehiiv-sub-input {
+  width: 100%;
+  padding: 10px 14px;
+  padding-inline-start: 36px;
+  font-size: 13px;
+  font-family: inherit;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-1);
+  transition: border-color var(--t), background var(--t);
+}
+.beehiiv-sub-input:focus {
+  outline: none;
+  border-color: var(--brand);
+  background: var(--surface);
+}
+.beehiiv-sub-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.beehiiv-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+  cursor: pointer;
+  user-select: none;
+}
+.beehiiv-checkbox-label input[type="checkbox"] {
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+.beehiiv-select {
+  appearance: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-1);
+  cursor: pointer;
+  transition: border-color var(--t);
+}
+.beehiiv-select:focus {
+  outline: none;
+  border-color: var(--brand);
+}
+.beehiiv-subscriber-list-wrap {
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.beehiiv-subscriber-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.beehiiv-sub-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  transition: background var(--t);
+}
+.beehiiv-sub-row:last-child {
+  border-bottom: 0;
+}
+.beehiiv-sub-row:hover {
+  background: var(--surface-2);
+}
+.beehiiv-sub-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--brand-bg);
+  color: var(--brand);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.beehiiv-sub-info strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.beehiiv-sub-info small {
+  font-size: 11px;
+  color: var(--text-3);
+}
+

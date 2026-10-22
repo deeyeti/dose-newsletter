@@ -85,6 +85,23 @@ CREATE TABLE IF NOT EXISTS public.job_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- 7. Beehiiv Posts & Analytics (for Human Co-Editor and AI Assistant queries)
+CREATE TABLE IF NOT EXISTS public.beehiiv_posts (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  draft_id TEXT REFERENCES public.drafts(id) ON DELETE CASCADE,
+  publication_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  title TEXT,
+  subtitle TEXT,
+  web_url TEXT,
+  preview_url TEXT,
+  scheduled_at TIMESTAMPTZ,
+  stats JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON public.jobs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_frameio_asset_id ON public.jobs(frameio_asset_id);
@@ -95,6 +112,8 @@ CREATE INDEX IF NOT EXISTS idx_transcripts_filename ON public.transcripts(filena
 CREATE INDEX IF NOT EXISTS idx_drafts_job_id ON public.drafts(job_id);
 CREATE INDEX IF NOT EXISTS idx_email_sends_draft_id ON public.email_sends(draft_id);
 CREATE INDEX IF NOT EXISTS idx_job_events_job_id ON public.job_events(job_id);
+CREATE INDEX IF NOT EXISTS idx_beehiiv_posts_job_id ON public.beehiiv_posts(job_id);
+CREATE INDEX IF NOT EXISTS idx_beehiiv_posts_status ON public.beehiiv_posts(status);
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
@@ -103,6 +122,7 @@ ALTER TABLE public.transcripts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.drafts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.email_sends ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.beehiiv_posts ENABLE ROW LEVEL SECURITY;
 
 -- Allow full access to service_role and anon (or authenticated) users
 CREATE POLICY "Allow all operations for anon and service_role" ON public.jobs FOR ALL USING (true) WITH CHECK (true);
@@ -111,3 +131,4 @@ CREATE POLICY "Allow all operations for anon and service_role" ON public.transcr
 CREATE POLICY "Allow all operations for anon and service_role" ON public.drafts FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all operations for anon and service_role" ON public.email_sends FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all operations for anon and service_role" ON public.job_events FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all operations for anon and service_role" ON public.beehiiv_posts FOR ALL USING (true) WITH CHECK (true);

@@ -4,7 +4,43 @@ import { useCallback, useEffect, useState } from "react";
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Config = { frameio: boolean; groq: boolean; claude: boolean; email: boolean; beehiiv?: boolean; emailProvider?: string; claudeModel: string | null; transcriptionModel: string };
 type Job = { id: string; filename: string; durationSeconds?: number; status: string; isSample: boolean; createdAt: string; updatedAt?: string; errorMessage?: string; draftSubject?: string; recipientEmail?: string };
-type Detail = { job: Job; transcript: { text: string; model: string } | null; draft: Draft | null; events: { status: string; message: string; created_at: string }[]; email: unknown };
+type BeehiivStats = {
+  email?: {
+    recipients?: number;
+    delivered?: number;
+    opens?: number;
+    uniqueOpens?: number;
+    openRate?: number;
+    clicks?: number;
+    uniqueClicks?: number;
+    clickRate?: number;
+  };
+  web?: {
+    views?: number;
+    clicks?: number;
+  };
+};
+type BeehiivPost = {
+  id: string;
+  status: "draft" | "confirmed" | "archived" | string;
+  title?: string;
+  subtitle?: string;
+  previewUrl?: string;
+  webUrl?: string;
+  scheduledAt?: string | null;
+  publishDate?: string | null;
+  stats?: BeehiivStats | null;
+  updatedAt?: string;
+};
+type BeehiivSubscription = {
+  id: string;
+  email: string;
+  status: "active" | "validating" | "pending" | "unsubscribed" | string;
+  tier?: "free" | "premium" | string;
+  created?: number | string;
+  utmSource?: string;
+};
+type Detail = { job: Job; transcript: { text: string; model: string } | null; draft: Draft | null; events: { status: string; message: string; created_at: string }[]; email: unknown; beehiivPost?: BeehiivPost | null };
 type Draft = { id?: string; subject: string; previewText: string; headline: string; body: string; closing?: string; recipientEmail?: string; status: string; updatedAt?: string };
 type Lang = "en" | "ar";
 type Theme = "light" | "dark";
@@ -96,9 +132,56 @@ const i18n = {
     videoDeleted: "Video removed.",
     samplesCleared: "All sample videos removed.",
     pushBeehiiv: "Push to Beehiiv",
-    pushingBeehiiv: "Pushing to Beehiiv…",
-    beehiivSuccess: "Draft created in Beehiiv!",
-    viewOnBeehiiv: "View on Beehiiv ↗",
+    pushingBeehiiv: "Syncing with Beehiiv…",
+    beehiivSuccess: "Synced to Beehiiv!",
+    viewOnBeehiiv: "Preview Post ↗",
+    liveWebPost: "Live Web Post ↗",
+    beehiivControls: "Beehiiv Publishing & Analytics",
+    beehiivStatus: "Beehiiv Status",
+    saveAsBeehiivDraft: "Save Draft to Beehiiv",
+    publishToBeehiivNow: "Publish to Beehiiv Now",
+    scheduleOnBeehiiv: "Schedule Publication",
+    syncBeehiivUpdates: "Sync Updates to Beehiiv",
+    refreshStats: "Refresh Metrics",
+    refreshingStats: "Refreshing…",
+    performanceMetrics: "Live Performance",
+    recipients: "Recipients",
+    opens: "Opens",
+    uniqueOpens: "Unique Opens",
+    openRate: "Open Rate",
+    clicks: "Clicks",
+    clickRate: "Click Rate",
+    webViews: "Web Views",
+    statusDraft: "Draft",
+    statusScheduled: "Scheduled",
+    statusPublished: "Published",
+    scheduledFor: "Scheduled for",
+    selectScheduleTime: "Select date & time for broadcast",
+    modeDraft: "Draft",
+    modePublish: "Publish Now",
+    modeSchedule: "Schedule",
+    beehiivAudience: "Audience & Subscribers",
+    beehiivAudienceEyebrow: "Beehiiv Integration",
+    addSubscriber: "Add Subscriber",
+    addingSubscriber: "Adding to Beehiiv…",
+    subscriberAdded: "Subscriber added to Beehiiv!",
+    subscriberRemoved: "Subscriber removed.",
+    subscriberEmailPlaceholder: "Enter reader email (e.g. reader@doseofsociety.com)",
+    sendWelcomeEmail: "Send welcome email",
+    subscribers: "subscribers",
+    subscriber: "subscriber",
+    noSubscribers: "No subscribers found.",
+    noSubscribersSub: "Add reader emails above to expand your Beehiiv publication audience directly from Dose Engine.",
+    refreshSubscribers: "Refresh audience",
+    refreshingSubscribers: "Refreshing…",
+    addToBeehiiv: "+ Add to Beehiiv",
+    confirmDeleteSubscriber: "Remove this subscriber from Beehiiv?",
+    tierFree: "Free",
+    tierPremium: "Premium",
+    statusActive: "Active",
+    statusValidating: "Validating",
+    statusUnsubscribed: "Unsubscribed",
+    quickAddRecipientToBeehiiv: "Add recipient to Beehiiv",
   },
   ar: {
     brand: "Dose Engine",
@@ -185,9 +268,56 @@ const i18n = {
     videoDeleted: "تم حذف الفيديو.",
     samplesCleared: "تم حذف جميع العينات.",
     pushBeehiiv: "إرسال إلى Beehiiv",
-    pushingBeehiiv: "جاري الإرسال إلى Beehiiv…",
-    beehiivSuccess: "تم إنشاء المسودة في Beehiiv!",
-    viewOnBeehiiv: "عرض على Beehiiv ↗",
+    pushingBeehiiv: "جاري المزامنة مع Beehiiv…",
+    beehiivSuccess: "تمت المزامنة مع Beehiiv!",
+    viewOnBeehiiv: "معاينة المنشور ↗",
+    liveWebPost: "المنشور المباشر ↗",
+    beehiivControls: "النشر والتحليلات عبر Beehiiv",
+    beehiivStatus: "حالة Beehiiv",
+    saveAsBeehiivDraft: "حفظ كمسودة في Beehiiv",
+    publishToBeehiivNow: "نشر فوري على Beehiiv",
+    scheduleOnBeehiiv: "جدولة النشر على Beehiiv",
+    syncBeehiivUpdates: "مزامنة التعديلات مع Beehiiv",
+    refreshStats: "تحديث الإحصاءات",
+    refreshingStats: "جاري التحديث…",
+    performanceMetrics: "الأداء المباشر",
+    recipients: "المستلمون",
+    opens: "مرات الفتح",
+    uniqueOpens: "فتح فريد",
+    openRate: "نسبة الفتح",
+    clicks: "النقرات",
+    clickRate: "نسبة النقر",
+    webViews: "مشاهدات الويب",
+    statusDraft: "مسودة",
+    statusScheduled: "مجدول",
+    statusPublished: "منشور",
+    scheduledFor: "مجدول لتاريخ",
+    selectScheduleTime: "حدد تاريخ ووقت إرسال البث",
+    modeDraft: "مسودة",
+    modePublish: "نشر فوري",
+    modeSchedule: "جدولة",
+    beehiivAudience: "الجمهور والمشتركون",
+    beehiivAudienceEyebrow: "تكامل Beehiiv وإدارة المشتركين",
+    addSubscriber: "إضافة مشترك",
+    addingSubscriber: "جاري الإضافة إلى Beehiiv…",
+    subscriberAdded: "تمت إضافة المشترك إلى Beehiiv!",
+    subscriberRemoved: "تمت إزالة المشترك من Beehiiv.",
+    subscriberEmailPlaceholder: "أدخل بريد القارئ الإلكتروني (مثل: reader@doseofsociety.com)",
+    sendWelcomeEmail: "إرسال رسالة ترحيب",
+    subscribers: "مشتركون",
+    subscriber: "مشترك",
+    noSubscribers: "لا يوجد مشتركون بعد.",
+    noSubscribersSub: "أضف عناوين البريد أعلاه لتسجيل القراء في نشرة Beehiiv مباشرة من Dose Engine.",
+    refreshSubscribers: "تحديث الجمهور",
+    refreshingSubscribers: "جاري التحديث…",
+    addToBeehiiv: "+ إضافة إلى Beehiiv",
+    confirmDeleteSubscriber: "هل أنت متأكد من إزالة هذا المشترك من Beehiiv؟",
+    tierFree: "مجاني",
+    tierPremium: "مميز",
+    statusActive: "نشط",
+    statusValidating: "قيد التحقق",
+    statusUnsubscribed: "ملغي الاشتراك",
+    quickAddRecipientToBeehiiv: "إضافة المستلم إلى Beehiiv",
   },
 } as const;
 
@@ -195,6 +325,16 @@ const i18n = {
 const statusLabel = (s: string) => s.replaceAll("_", " ");
 const fmt = (value: string) =>
   new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+const fmtDateOrTimestamp = (value?: string | number) => {
+  if (!value) return "";
+  try {
+    const num = typeof value === "number" ? value : Number(value);
+    const date = !isNaN(num) && num < 1e11 ? new Date(num * 1000) : new Date(value);
+    return isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
+  } catch {
+    return String(value);
+  }
+};
 const fmtTime = (value?: string) => {
   if (!value) return "";
   try {
@@ -213,6 +353,13 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
   const [notice, setNotice] = useState("");
   const [lang, setLang] = useState<Lang>("en");
   const [theme, setTheme] = useState<Theme>("light");
+  const [subscribers, setSubscribers] = useState<BeehiivSubscription[]>([]);
+  const [loadingSubscribers, setLoadingSubscribers] = useState(false);
+  const [subEmail, setSubEmail] = useState("");
+  const [subSendWelcome, setSubSendWelcome] = useState(false);
+  const [subTier, setSubTier] = useState<"free" | "premium">("free");
+  const [addingSubscriber, setAddingSubscriber] = useState(false);
+  const [subNotice, setSubNotice] = useState("");
 
   const t = i18n[lang];
 
@@ -231,6 +378,21 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
   const toggleTheme = () => setTheme((p) => (p === "light" ? "dark" : "light"));
   const toggleLang = () => setLang((p) => (p === "en" ? "ar" : "en"));
 
+  const loadSubscribers = useCallback(async () => {
+    setLoadingSubscribers(true);
+    try {
+      const res = await fetch("/api/beehiiv/subscribers?limit=50", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setSubscribers(data.subscribers || []);
+      }
+    } catch (err) {
+      console.error("[Dashboard] loadSubscribers error:", err);
+    } finally {
+      setLoadingSubscribers(false);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     try {
       const [jobsRes, healthRes] = await Promise.all([
@@ -244,6 +406,13 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
       if (healthRes && healthRes.ok) {
         const healthData = await healthRes.json().catch(() => ({}));
         setConfig(healthData.configuration || null);
+        if (healthData.configuration?.beehiiv) {
+          const subRes = await fetch("/api/beehiiv/subscribers?limit=50", { cache: "no-store" }).catch(() => null);
+          if (subRes && subRes.ok) {
+            const subData = await subRes.json().catch(() => ({}));
+            if (subData.subscribers) setSubscribers(subData.subscribers);
+          }
+        }
       }
     } catch (err) {
       console.error("[Dashboard] load error:", err);
@@ -263,6 +432,61 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
     const timer = window.setInterval(refresh, 4000);
     return () => { window.clearTimeout(initial); window.clearInterval(timer); };
   }, [load, open, activeJobId]);
+
+  async function addSubscriber(emailToAdd?: string, welcome?: boolean) {
+    const email = (emailToAdd || subEmail).trim();
+    if (!email || !email.includes("@")) {
+      setSubNotice(lang === "ar" ? "يرجى إدخال بريد إلكتروني صحيح." : "Please enter a valid email address.");
+      return false;
+    }
+    setAddingSubscriber(true);
+    setSubNotice("");
+    try {
+      const res = await fetch("/api/beehiiv/subscribers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email,
+          sendWelcomeEmail: welcome ?? subSendWelcome,
+          tier: subTier,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSubNotice(`${t.subscriberAdded}: ${email}`);
+        setSubEmail("");
+        await loadSubscribers();
+        return true;
+      } else {
+        setSubNotice(data.error || "Failed to add subscriber.");
+        return false;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to add subscriber.";
+      setSubNotice(msg);
+      return false;
+    } finally {
+      setAddingSubscriber(false);
+    }
+  }
+
+  async function removeSubscriber(id: string, email: string) {
+    if (!window.confirm(`${t.confirmDeleteSubscriber} (${email})`)) return;
+    try {
+      const res = await fetch(`/api/beehiiv/subscribers?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSubscribers((prev) => prev.filter((s) => s.id !== id));
+        setSubNotice(t.subscriberRemoved);
+      } else {
+        setSubNotice(data.error || "Failed to remove subscriber.");
+      }
+    } catch {
+      setSubNotice("Failed to remove subscriber.");
+    }
+  }
 
   async function post(url: string, label: string) {
     setNotice("");
@@ -487,6 +711,154 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
         )}
       </section>
 
+      {/* ── Beehiiv Audience & Subscribers ── */}
+      <section className="beehiiv-audience" aria-label={t.beehiivAudience}>
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">{t.beehiivAudienceEyebrow}</p>
+            <h2>{t.beehiivAudience}</h2>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <button
+              id="beehiiv-refresh-subscribers-btn"
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={loadingSubscribers}
+              onClick={() => void loadSubscribers()}
+              title={t.refreshSubscribers}
+            >
+              {loadingSubscribers ? (
+                <>
+                  <span className="spinner" style={{ width: 11, height: 11 }} />
+                  {t.refreshingSubscribers}
+                </>
+              ) : (
+                `⟳ ${t.refreshSubscribers}`
+              )}
+            </button>
+            <span className="section-header-count">
+              {subscribers.length} {subscribers.length === 1 ? t.subscriber : t.subscribers}
+            </span>
+          </div>
+        </div>
+
+        <div className="beehiiv-audience-card">
+          <form
+            className="beehiiv-sub-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void addSubscriber();
+            }}
+          >
+            <div className="beehiiv-sub-input-wrap">
+              <span className="beehiiv-sub-icon">✉</span>
+              <input
+                id="beehiiv-new-subscriber-email"
+                type="email"
+                required
+                className="beehiiv-sub-input"
+                placeholder={t.subscriberEmailPlaceholder}
+                value={subEmail}
+                onChange={(e) => setSubEmail(e.target.value)}
+                disabled={addingSubscriber}
+              />
+            </div>
+
+            <div className="beehiiv-sub-options">
+              <label className="beehiiv-checkbox-label">
+                <input
+                  id="beehiiv-welcome-email-checkbox"
+                  type="checkbox"
+                  checked={subSendWelcome}
+                  onChange={(e) => setSubSendWelcome(e.target.checked)}
+                />
+                <span>{t.sendWelcomeEmail}</span>
+              </label>
+
+              <select
+                id="beehiiv-tier-select"
+                className="beehiiv-select"
+                value={subTier}
+                onChange={(e) => setSubTier(e.target.value as "free" | "premium")}
+              >
+                <option value="free">{t.tierFree}</option>
+                <option value="premium">{t.tierPremium}</option>
+              </select>
+
+              <button
+                id="beehiiv-add-subscriber-btn"
+                type="submit"
+                className="btn btn-primary"
+                disabled={addingSubscriber || !subEmail}
+              >
+                {addingSubscriber ? (
+                  <>
+                    <span className="spinner" style={{ width: 12, height: 12 }} />
+                    {t.addingSubscriber}
+                  </>
+                ) : (
+                  `✦ ${t.addSubscriber}`
+                )}
+              </button>
+            </div>
+          </form>
+
+          {subNotice && (
+            <p className="notice" role="status" style={{ margin: "4px 0 0" }}>
+              {subNotice}
+            </p>
+          )}
+
+          {!config?.beehiiv && (
+            <p className="notice" style={{ margin: "4px 0 0", fontSize: 12 }}>
+              {lang === "ar"
+                ? "تنبيه: يتطلب تفعيل تكامل Beehiiv ضبط BEEHIIV_API_KEY و BEEHIIV_PUBLICATION_ID في ملف local.env."
+                : "Note: Beehiiv credentials must be configured in local.env (BEEHIIV_API_KEY and BEEHIIV_PUBLICATION_ID)."}
+            </p>
+          )}
+
+          <div className="beehiiv-subscriber-list-wrap">
+            {subscribers.length ? (
+              <div className="beehiiv-subscriber-list">
+                {subscribers.map((sub) => {
+                  const initial = (sub.email.charAt(0) || "U").toUpperCase();
+                  const dateStr = fmtDateOrTimestamp(sub.created);
+                  return (
+                    <div className="beehiiv-sub-row" key={sub.id}>
+                      <div className="beehiiv-sub-avatar">{initial}</div>
+                      <div className="beehiiv-sub-info">
+                        <strong>{sub.email}</strong>
+                        {dateStr && <small>{dateStr}</small>}
+                      </div>
+                      <span className={`pill ${sub.tier === "premium" ? "ready_for_review" : ""}`} style={{ fontSize: 10 }}>
+                        {sub.tier === "premium" ? t.tierPremium : t.tierFree}
+                      </span>
+                      <span className={`pill ${sub.status === "active" ? "sent" : ""}`} style={{ fontSize: 10 }}>
+                        {sub.status === "active" ? t.statusActive : sub.status === "validating" ? t.statusValidating : sub.status}
+                      </span>
+                      <button
+                        type="button"
+                        className="row-delete-btn"
+                        onClick={() => void removeSubscriber(sub.id, sub.email)}
+                        title={t.confirmDeleteSubscriber}
+                        aria-label={t.confirmDeleteSubscriber}
+                      >
+                        🗑
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="empty" style={{ margin: "16px 0 0" }}>
+                <p className="empty-title">{t.noSubscribers}</p>
+                <p className="empty-sub">{t.noSubscribersSub}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
       {/* ── Drawer ── */}
       {detail && (
         <>
@@ -501,6 +873,7 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
             t={t}
             lang={lang}
             beehiivConfigured={Boolean(config?.beehiiv)}
+            onSubscriberAdded={() => void loadSubscribers()}
           />
         </>
       )}
@@ -510,7 +883,7 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
 
 // ─── Job Panel ───────────────────────────────────────────────────────────────
 function JobPanel({
-  detail, close, refresh, onDelete, setNotice, t, lang, beehiivConfigured,
+  detail, close, refresh, onDelete, setNotice, t, lang, beehiivConfigured, onSubscriberAdded,
 }: {
   detail: Detail;
   close: () => void;
@@ -520,6 +893,7 @@ function JobPanel({
   t: typeof i18n[Lang];
   lang: Lang;
   beehiivConfigured?: boolean;
+  onSubscriberAdded?: () => void;
 }) {
   const [prevRemoteDraft, setPrevRemoteDraft] = useState<Draft | null>(detail.draft);
   const [draft, setDraft] = useState<Draft | null>(detail.draft);
@@ -608,35 +982,121 @@ function JobPanel({
   }
 
   const [pushingBeehiiv, setPushingBeehiiv] = useState(false);
-  const [beehiivPost, setBeehiivPost] = useState<{ id: string; previewUrl?: string; webUrl?: string } | null>(null);
+  const [refreshingStats, setRefreshingStats] = useState(false);
+  const [prevRemoteBeehiivPost, setPrevRemoteBeehiivPost] = useState<BeehiivPost | null>(detail.beehiivPost || null);
+  const [beehiivPost, setBeehiivPost] = useState<BeehiivPost | null>(detail.beehiivPost || null);
+  const [beehiivAction, setBeehiivAction] = useState<"draft" | "publish" | "schedule">("draft");
+  const [scheduledDateTime, setScheduledDateTime] = useState<string>("");
 
-  async function pushToBeehiiv() {
+  if (detail.beehiivPost !== prevRemoteBeehiivPost) {
+    setPrevRemoteBeehiivPost(detail.beehiivPost || null);
+    setBeehiivPost(detail.beehiivPost || null);
+    if (detail.beehiivPost?.scheduledAt) {
+      try {
+        const d = new Date(detail.beehiivPost.scheduledAt);
+        const pad = (n: number) => String(n).padStart(2, "0");
+        setScheduledDateTime(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`);
+        setBeehiivAction("schedule");
+      } catch {}
+    } else if (detail.beehiivPost?.status === "confirmed") {
+      setBeehiivAction("publish");
+    } else {
+      setBeehiivAction("draft");
+    }
+  }
+
+  async function pushToBeehiiv(actionOverride?: "draft" | "publish" | "schedule") {
     if (!draft) return;
+    const action = actionOverride || beehiivAction;
+    if (action === "schedule" && !scheduledDateTime) {
+      const msg = lang === "ar" ? "يرجى تحديد تاريخ ووقت الجدولة." : "Please select a date and time to schedule publication.";
+      setPanelNotice(msg);
+      setNotice(msg);
+      return;
+    }
+
     setPushingBeehiiv(true);
     setPanelNotice("");
     try {
       const res = await fetch(`/api/jobs/${detail.job.id}/beehiiv`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ draft, status: "draft" }),
+        body: JSON.stringify({
+          action,
+          scheduledAt: action === "schedule" ? new Date(scheduledDateTime).toISOString() : undefined,
+          draft,
+        }),
       });
       const data = await res.json();
       if (data.error) {
         setPanelNotice(data.error);
         setNotice(data.error);
       } else {
-        setBeehiivPost({ id: data.postId, previewUrl: data.previewUrl, webUrl: data.webUrl });
-        const successMsg = `${t.beehiivSuccess} (ID: ${data.postId})`;
+        setBeehiivPost(data.post || { id: data.postId, previewUrl: data.previewUrl, webUrl: data.webUrl, status: action === "draft" ? "draft" : "confirmed" });
+        const label = action === "publish" ? t.statusPublished : action === "schedule" ? t.statusScheduled : t.statusDraft;
+        const successMsg = `${t.beehiivSuccess} [${label}] (ID: ${data.postId})`;
         setPanelNotice(successMsg);
         setNotice(successMsg);
         refresh();
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to push to Beehiiv.";
+      const msg = err instanceof Error ? err.message : "Failed to sync with Beehiiv.";
       setPanelNotice(msg);
       setNotice(msg);
     } finally {
       setPushingBeehiiv(false);
+    }
+  }
+
+  async function refreshBeehiivMetrics() {
+    setRefreshingStats(true);
+    try {
+      const res = await fetch(`/api/jobs/${detail.job.id}/beehiiv`);
+      const data = await res.json();
+      if (data.post) {
+        setBeehiivPost(data.post);
+        const msg = lang === "ar" ? "تم تحديث إحصاءات Beehiiv." : "Beehiiv metrics refreshed.";
+        setPanelNotice(msg);
+        setNotice(msg);
+      }
+    } catch {
+      const msg = lang === "ar" ? "تعذر تحديث الإحصاءات." : "Could not refresh metrics.";
+      setPanelNotice(msg);
+      setNotice(msg);
+    } finally {
+      setRefreshingStats(false);
+    }
+  }
+
+  const [quickAddingBeehiiv, setQuickAddingBeehiiv] = useState(false);
+
+  async function handleQuickAddRecipient() {
+    if (!draft?.recipientEmail) return;
+    setQuickAddingBeehiiv(true);
+    try {
+      const res = await fetch("/api/beehiiv/subscribers", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: draft.recipientEmail,
+          sendWelcomeEmail: false,
+          tier: "free",
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const msg = `${t.subscriberAdded}: ${draft.recipientEmail}`;
+        setPanelNotice(msg);
+        setNotice(msg);
+        onSubscriberAdded?.();
+      } else {
+        setPanelNotice(data.error || "Failed to add to Beehiiv.");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to add to Beehiiv.";
+      setPanelNotice(msg);
+    } finally {
+      setQuickAddingBeehiiv(false);
     }
   }
 
@@ -846,7 +1306,38 @@ function JobPanel({
                 <div className="field"><label>{t.headline}<input value={draft.headline} onChange={(e) => set("headline", e.target.value)} /></label></div>
                 <div className="field"><label>{t.storyBody}<textarea rows={12} value={draft.body} onChange={(e) => set("body", e.target.value)} /></label></div>
                 <div className="field"><label>{t.closing}<input value={draft.closing || ""} onChange={(e) => set("closing", e.target.value)} /></label></div>
-                <div className="field"><label>{t.recipientEmail}<input type="email" value={draft.recipientEmail || ""} onChange={(e) => set("recipientEmail", e.target.value)} placeholder="editor@example.com" /></label></div>
+                <div className="field">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                    <label htmlFor="job-recipient-email" style={{ margin: 0 }}>{t.recipientEmail}</label>
+                    {beehiivConfigured && draft.recipientEmail && draft.recipientEmail.includes("@") && (
+                      <button
+                        id="quick-add-recipient-beehiiv-btn"
+                        type="button"
+                        className="btn btn-subtle btn-xs"
+                        style={{ color: "var(--brand)", fontWeight: 600 }}
+                        onClick={() => void handleQuickAddRecipient()}
+                        disabled={quickAddingBeehiiv}
+                        title={t.quickAddRecipientToBeehiiv}
+                      >
+                        {quickAddingBeehiiv ? (
+                          <>
+                            <span className="spinner" style={{ width: 10, height: 10 }} />
+                            {t.addingSubscriber}
+                          </>
+                        ) : (
+                          `✦ ${t.quickAddRecipientToBeehiiv}`
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    id="job-recipient-email"
+                    type="email"
+                    value={draft.recipientEmail || ""}
+                    onChange={(e) => set("recipientEmail", e.target.value)}
+                    placeholder="editor@example.com"
+                  />
+                </div>
               </>
             ) : (
               <div className="newsletter-artifact">
@@ -875,34 +1366,176 @@ function JobPanel({
               </div>
             )}
 
+            {/* Beehiiv Publishing & Analytics Card */}
+            {beehiivConfigured && (
+              <div className="beehiiv-card">
+                <div className="beehiiv-head">
+                  <div className="beehiiv-head-title">
+                    <span>✦</span>
+                    <span>{t.beehiivControls}</span>
+                  </div>
+                  {beehiivPost && (
+                    <span className={`beehiiv-badge ${beehiivPost.scheduledAt ? "scheduled" : beehiivPost.status}`}>
+                      {beehiivPost.scheduledAt
+                        ? `⏱ ${t.statusScheduled}`
+                        : beehiivPost.status === "confirmed"
+                        ? `✓ ${t.statusPublished}`
+                        : `✎ ${t.statusDraft}`}
+                    </span>
+                  )}
+                </div>
+
+                <div className="beehiiv-body">
+                  {beehiivPost && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, fontSize: 13 }}>
+                      <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                        {beehiivPost.previewUrl && (
+                          <a href={beehiivPost.previewUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", fontWeight: 600, textDecoration: "underline" }}>
+                            {t.viewOnBeehiiv}
+                          </a>
+                        )}
+                        {beehiivPost.webUrl && (
+                          <a href={beehiivPost.webUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-2)", fontWeight: 500, textDecoration: "underline" }}>
+                            {t.liveWebPost}
+                          </a>
+                        )}
+                      </div>
+                      {beehiivPost.scheduledAt && (
+                        <div style={{ fontSize: 12, color: "var(--warn)", fontWeight: 600 }}>
+                          {t.scheduledFor}: {fmt(beehiivPost.scheduledAt)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {beehiivPost && (
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-3)" }}>
+                          {t.performanceMetrics}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-subtle btn-xs"
+                          disabled={refreshingStats}
+                          onClick={() => void refreshBeehiivMetrics()}
+                          title="Fetch latest open and click metrics from Beehiiv API"
+                        >
+                          {refreshingStats ? (
+                            <>
+                              <span className="spinner" style={{ width: 10, height: 10 }} />
+                              {t.refreshingStats}
+                            </>
+                          ) : (
+                            `⟳ ${t.refreshStats}`
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="beehiiv-metrics-grid">
+                        <div className="beehiiv-metric-box">
+                          <span className="beehiiv-metric-label">{t.recipients}</span>
+                          <span className="beehiiv-metric-value">{beehiivPost.stats?.email?.recipients ?? 0}</span>
+                          <span className="beehiiv-metric-sub">{beehiivPost.stats?.email?.delivered ?? 0} delivered</span>
+                        </div>
+                        <div className="beehiiv-metric-box">
+                          <span className="beehiiv-metric-label">{t.openRate}</span>
+                          <span className="beehiiv-metric-value">
+                            {beehiivPost.stats?.email?.openRate != null ? `${(beehiivPost.stats.email.openRate * 100).toFixed(1)}%` : "0.0%"}
+                          </span>
+                          <span className="beehiiv-metric-sub">{beehiivPost.stats?.email?.uniqueOpens ?? 0} unique opens</span>
+                        </div>
+                        <div className="beehiiv-metric-box">
+                          <span className="beehiiv-metric-label">{t.clickRate}</span>
+                          <span className="beehiiv-metric-value">
+                            {beehiivPost.stats?.email?.clickRate != null ? `${(beehiivPost.stats.email.clickRate * 100).toFixed(1)}%` : "0.0%"}
+                          </span>
+                          <span className="beehiiv-metric-sub">{beehiivPost.stats?.email?.uniqueClicks ?? 0} clicks</span>
+                        </div>
+                        <div className="beehiiv-metric-box">
+                          <span className="beehiiv-metric-label">{t.webViews}</span>
+                          <span className="beehiiv-metric-value">{beehiivPost.stats?.web?.views ?? 0}</span>
+                          <span className="beehiiv-metric-sub">web reads</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="beehiiv-controls-bar">
+                    <div className="beehiiv-mode-toggle">
+                      <button
+                        type="button"
+                        className={`beehiiv-mode-btn ${beehiivAction === "draft" ? "active" : ""}`}
+                        onClick={() => setBeehiivAction("draft")}
+                      >
+                        {t.modeDraft}
+                      </button>
+                      <button
+                        type="button"
+                        className={`beehiiv-mode-btn ${beehiivAction === "publish" ? "active" : ""}`}
+                        onClick={() => setBeehiivAction("publish")}
+                      >
+                        {t.modePublish}
+                      </button>
+                      <button
+                        type="button"
+                        className={`beehiiv-mode-btn ${beehiivAction === "schedule" ? "active" : ""}`}
+                        onClick={() => setBeehiivAction("schedule")}
+                      >
+                        {t.modeSchedule}
+                      </button>
+                    </div>
+
+                    {beehiivAction === "schedule" && (
+                      <input
+                        type="datetime-local"
+                        className="beehiiv-date-input"
+                        value={scheduledDateTime}
+                        onChange={(e) => setScheduledDateTime(e.target.value)}
+                        title={t.selectScheduleTime}
+                      />
+                    )}
+
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={pushingBeehiiv}
+                      onClick={() => void pushToBeehiiv()}
+                      style={{ marginInlineStart: "auto" }}
+                    >
+                      {pushingBeehiiv ? (
+                        <>
+                          <span className="spinner" style={{ width: 11, height: 11 }} />
+                          {t.pushingBeehiiv}
+                        </>
+                      ) : beehiivPost?.id ? (
+                        beehiivAction === "publish"
+                          ? `✦ ${t.publishToBeehiivNow}`
+                          : beehiivAction === "schedule"
+                          ? `⏱ ${t.scheduleOnBeehiiv}`
+                          : `✦ ${t.syncBeehiivUpdates}`
+                      ) : beehiivAction === "publish" ? (
+                        `✦ ${t.publishToBeehiivNow}`
+                      ) : beehiivAction === "schedule" ? (
+                        `⏱ ${t.scheduleOnBeehiiv}`
+                      ) : (
+                        `✦ ${t.saveAsBeehiivDraft}`
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Actions */}
             <div className="editor-actions" style={{ flexWrap: "wrap", gap: 8 }}>
               <button className="btn btn-ghost" disabled={saving || draft.status === "sent"} onClick={() => void save()}>
                 {saving ? t.saving : t.saveDraft}
               </button>
-              {beehiivConfigured && (
-                <button
-                  type="button"
-                  className="btn btn-subtle"
-                  disabled={pushingBeehiiv}
-                  onClick={() => void pushToBeehiiv()}
-                  title="Push draft to Beehiiv publication"
-                >
-                  {pushingBeehiiv ? t.pushingBeehiiv : `✦ ${t.pushBeehiiv}`}
-                </button>
-              )}
               <button className="btn btn-primary" disabled={draft.status === "sent"} onClick={() => setConfirming(true)}>
                 {draft.status === "sent" ? t.sent : t.sendNewsletter}
               </button>
             </div>
-            {beehiivPost?.previewUrl && (
-              <div style={{ marginTop: 12, padding: "8px 14px", background: "var(--brand-bg, #fff0f0)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span>✓ {t.beehiivSuccess}</span>
-                <a href={beehiivPost.previewUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", fontWeight: 600, textDecoration: "underline" }}>
-                  {t.viewOnBeehiiv}
-                </a>
-              </div>
-            )}
           </section>
         ) : (
           <section className="waiting">

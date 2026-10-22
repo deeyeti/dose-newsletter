@@ -1,5 +1,5 @@
 import { env } from "@/lib/env";
-import type { Job, NewsletterDraft } from "@/lib/types";
+import type { Job, NewsletterDraft, BeehiivPostRecord } from "@/lib/types";
 
 function getCredentials() {
   const url = env("SUPABASE_URL");
@@ -130,6 +130,7 @@ export async function supabaseJobDetail(jobId: string): Promise<any | null> {
             error_message: email.error_message ? String(email.error_message) : null,
           }
         : null,
+      beehiivPost: await supabaseGetBeehiivPost(jobId).catch(() => null),
     };
   } catch {
     return null;
@@ -382,6 +383,72 @@ export async function supabaseUpsertEmailSend(send: {
   }
 }
 
+export async function supabaseGetBeehiivPost(jobId: string): Promise<BeehiivPostRecord | null> {
+  const creds = getCredentials();
+  if (!creds) return null;
+
+  try {
+    const res = await fetch(
+      `${creds.url}/rest/v1/beehiiv_posts?job_id=eq.${encodeURIComponent(jobId)}&select=*&order=created_at.desc&limit=1`,
+      { headers: creds.headers, cache: "no-store" }
+    );
+    if (!res.ok) return null;
+    const rows = (await res.json()) as any[];
+    if (!rows.length) return null;
+    const r = rows[0];
+    return {
+      id: String(r.id),
+      jobId: String(r.job_id),
+      draftId: r.draft_id ? String(r.draft_id) : undefined,
+      publicationId: String(r.publication_id),
+      status: r.status,
+      title: r.title ? String(r.title) : undefined,
+      subtitle: r.subtitle ? String(r.subtitle) : undefined,
+      webUrl: r.web_url ? String(r.web_url) : undefined,
+      previewUrl: r.preview_url ? String(r.preview_url) : undefined,
+      scheduledAt: r.scheduled_at ? String(r.scheduled_at) : null,
+      publishDate: r.published_at ? String(r.published_at) : null,
+      stats: r.stats ?? null,
+      createdAt: String(r.created_at),
+      updatedAt: String(r.updated_at),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function supabaseUpsertBeehiivPost(post: BeehiivPostRecord): Promise<void> {
+  const creds = getCredentials();
+  if (!creds) return;
+
+  try {
+    const res = await fetch(`${creds.url}/rest/v1/beehiiv_posts?on_conflict=id`, {
+      method: "POST",
+      headers: { ...creds.headers, Prefer: "resolution=merge-duplicates" },
+      body: JSON.stringify({
+        id: post.id,
+        job_id: post.jobId,
+        draft_id: post.draftId ?? null,
+        publication_id: post.publicationId,
+        status: post.status,
+        title: post.title ?? null,
+        subtitle: post.subtitle ?? null,
+        web_url: post.webUrl ?? null,
+        preview_url: post.previewUrl ?? null,
+        scheduled_at: post.scheduledAt ?? null,
+        stats: post.stats ?? null,
+        created_at: post.createdAt,
+        updated_at: post.updatedAt,
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.warn(`[supabase] upsertBeehiivPost status ${res.status}:`, errText);
+    }
+  } catch (err) {
+    console.warn("[supabase] upsertBeehiivPost failed:", err);
+  }
+}
 
 export async function supabaseInsertEvent(event: {
   id: string;
@@ -416,6 +483,10 @@ export async function supabaseDeleteJob(jobId: string): Promise<void> {
 
   try {
     const encoded = encodeURIComponent(jobId);
+    await fetch(`${creds.url}/rest/v1/beehiiv_posts?job_id=eq.${encoded}`, {
+      method: "DELETE",
+      headers: creds.headers,
+    }).catch(() => {});
     await fetch(`${creds.url}/rest/v1/job_events?job_id=eq.${encoded}`, {
       method: "DELETE",
       headers: creds.headers,
