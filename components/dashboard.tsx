@@ -1123,7 +1123,6 @@ function JobPanel({
       setPanelNotice(msg);
     } finally {
       setQuickAddingBeehiiv(false);
->>>>>>> main
     }
   }
 

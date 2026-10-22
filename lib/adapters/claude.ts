@@ -49,7 +49,7 @@ export async function generateWithClaude(prompt: string, systemPrompt: string = 
   const key = anthropicKey();
   const model = env("CLAUDE_MODEL") || CLAUDE_DEFAULT_MODEL;
   if (!key) throw new Error("Claude is not configured. Set ANTHROPIC_API_KEY (or local.env claude_api_key).");
-  if (!env("CLAUDE_MODEL")) throw new Error("CLAUDE_MODEL is required. Set a model ID available to this Anthropic account, then retry.");
+  if (!model) throw new Error("CLAUDE_MODEL is required. Set a model ID available to this Anthropic account, then retry.");
 
   const workspaceId = env("ANTHROPIC_WORKSPACE_ID") || env("anthropic_workspace_id");
   const reqHeaders: Record<string, string> = {
@@ -80,9 +80,7 @@ export async function generateWithClaude(prompt: string, systemPrompt: string = 
 }
 
 export async function writeNewsletter(transcript: string): Promise<DraftInput> {
-  const cKey = anthropicKey();
-  if (!cKey) throw new Error("Claude is not configured. Set ANTHROPIC_API_KEY.");
-  if (!env("CLAUDE_MODEL")) {
+  if (process.env.claude_api_key && !process.env.CLAUDE_MODEL) {
     throw new Error("CLAUDE_MODEL is required. Set a model ID available to this Anthropic account, then retry.");
   }
 

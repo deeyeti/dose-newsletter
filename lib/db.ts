@@ -216,14 +216,6 @@ const memWebhooks = new Set<string>();
 const memEmailSends = new Map<string, { idempotencyKey: string; status: string; providerMessageId?: string; sentAt?: string; errorMessage?: string }>();
 const memBeehiivPosts = new Map<string, BeehiivPostRecord>();
 
-// In-memory fallbacks for serverless environments where SQLite is unavailable
-const memJobs = new Map<string, Job>();
-const memDrafts = new Map<string, NewsletterDraft>();
-const memEvents = new Map<string, Array<{ status: string; message: string; created_at: string }>>();
-const memTranscripts = new Map<string, { text: string; language?: string; model: string; createdAt: string }>();
-const memWebhooks = new Set<string>();
-const memEmailSends = new Map<string, { idempotencyKey: string; status: string; providerMessageId?: string; sentAt?: string; errorMessage?: string }>();
-
 export const store = {
   listJobs(): Job[] {
     const db = getDb();
