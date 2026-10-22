@@ -112,7 +112,14 @@ export async function deliverEmail(draft: NewsletterDraft, idempotencyKey: strin
   const from = env("EMAIL_FROM");
   const provider = env("EMAIL_PROVIDER") || "resend";
 
-  if (provider !== "resend") throw new Error("Only the Resend demo adapter is implemented. Set EMAIL_PROVIDER=resend.");
+  if (provider === "beehiiv") {
+    const { deliverBeehiivPost } = await import("@/lib/adapters/beehiiv");
+    return await deliverBeehiivPost(draft, idempotencyKey);
+  }
+
+  if (provider !== "resend") {
+    throw new Error("Only the Resend demo adapter is implemented (or Beehiiv via EMAIL_PROVIDER=beehiiv). Set EMAIL_PROVIDER=resend.");
+  }
   if (!key || !from) throw new Error("Email is not configured. Set EMAIL_API_KEY and EMAIL_FROM; verify the sender in Resend.");
   if (!draft.recipientEmail) throw new Error("A recipient email is required before sending.");
 

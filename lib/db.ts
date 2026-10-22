@@ -2,13 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { env } from "@/lib/env";
-import type { DraftInput, Job, JobStatus, NewsletterDraft } from "@/lib/types";
+import type { DraftInput, Job, JobStatus, NewsletterDraft, BeehiivPostRecord } from "@/lib/types";
 import {
   isSupabaseConfigured,
   supabaseUpsertJob,
   supabaseUpsertTranscript,
   supabaseUpsertDraft,
   supabaseUpsertEmailSend,
+  supabaseUpsertBeehiivPost,
   supabaseInsertEvent,
   supabaseDeleteJob,
   supabaseRecordWebhook,
@@ -101,6 +102,21 @@ CREATE TABLE IF NOT EXISTS job_events (
   message TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS beehiiv_posts (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL REFERENCES jobs(id),
+  draft_id TEXT REFERENCES drafts(id),
+  publication_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  title TEXT,
+  subtitle TEXT,
+  web_url TEXT,
+  preview_url TEXT,
+  scheduled_at TEXT,
+  stats_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;
 
 function createDbConnection(): any {
@@ -167,6 +183,38 @@ const toJob = (r: Row): Job => ({
   recipientEmail: r.draft_recipient ? String(r.draft_recipient) : undefined,
 });
 const toDraft = (r: Row): NewsletterDraft => ({ id: String(r.id), jobId: String(r.job_id), subject: String(r.subject), previewText: String(r.preview_text), headline: String(r.headline), body: String(r.body), closing: r.closing ? String(r.closing) : undefined, recipientEmail: r.recipient_email ? String(r.recipient_email) : undefined, status: r.status as NewsletterDraft["status"], updatedAt: String(r.updated_at) });
+const toBeehiivPost = (r: Row): BeehiivPostRecord => {
+  let stats = null;
+  if (r.stats_json && typeof r.stats_json === "string") {
+    try {
+      stats = JSON.parse(r.stats_json);
+    } catch {}
+  }
+  return {
+    id: String(r.id),
+    jobId: String(r.job_id),
+    draftId: r.draft_id ? String(r.draft_id) : undefined,
+    publicationId: String(r.publication_id),
+    status: r.status as BeehiivPostRecord["status"],
+    title: r.title ? String(r.title) : undefined,
+    subtitle: r.subtitle ? String(r.subtitle) : undefined,
+    webUrl: r.web_url ? String(r.web_url) : undefined,
+    previewUrl: r.preview_url ? String(r.preview_url) : undefined,
+    scheduledAt: r.scheduled_at ? String(r.scheduled_at) : null,
+    stats,
+    createdAt: String(r.created_at),
+    updatedAt: String(r.updated_at),
+  };
+};
+
+// In-memory fallbacks for serverless environments where SQLite is unavailable
+const memJobs = new Map<string, Job>();
+const memDrafts = new Map<string, NewsletterDraft>();
+const memEvents = new Map<string, Array<{ status: string; message: string; created_at: string }>>();
+const memTranscripts = new Map<string, { text: string; language?: string; model: string; createdAt: string }>();
+const memWebhooks = new Set<string>();
+const memEmailSends = new Map<string, { idempotencyKey: string; status: string; providerMessageId?: string; sentAt?: string; errorMessage?: string }>();
+const memBeehiivPosts = new Map<string, BeehiivPostRecord>();
 
 // In-memory fallbacks for serverless environments where SQLite is unavailable
 const memJobs = new Map<string, Job>();
@@ -232,7 +280,7 @@ export const store = {
     }
   },
 
-  seedDetail(detail: { job: Job; transcript: any; draft: NewsletterDraft | null; events: any[]; email: any }) {
+  seedDetail(detail: { job: Job; transcript: any; draft: NewsletterDraft | null; events: any[]; email: any; beehiivPost?: BeehiivPostRecord | null }) {
     this.seedJob(detail.job);
     if (detail.draft) {
       memDrafts.set(detail.job.id, detail.draft);
@@ -314,6 +362,9 @@ export const store = {
         } catch {}
       }
     }
+    if (detail.beehiivPost) {
+      this.saveBeehiivPost(detail.beehiivPost);
+    }
   },
 
   async deleteJob(id: string) {
@@ -325,6 +376,7 @@ export const store = {
           db.prepare("DELETE FROM email_sends WHERE draft_id=?").run(draft.id);
           db.prepare("DELETE FROM drafts WHERE id=?").run(draft.id);
         }
+        db.prepare("DELETE FROM beehiiv_posts WHERE job_id=?").run(id);
         db.prepare("DELETE FROM job_events WHERE job_id=?").run(id);
         db.prepare("DELETE FROM transcripts WHERE job_id=?").run(id);
         db.prepare("DELETE FROM jobs WHERE id=?").run(id);
@@ -335,6 +387,7 @@ export const store = {
       memEmailSends.delete(memDraft.id);
       memDrafts.delete(id);
     }
+    memBeehiivPosts.delete(id);
     memEvents.delete(id);
     memTranscripts.delete(id);
     memJobs.delete(id);
@@ -542,9 +595,65 @@ export const store = {
     return memDrafts.get(jobId);
   },
 
+  getBeehiivPost(jobId: string): BeehiivPostRecord | null {
+    const db = getDb();
+    if (db) {
+      try {
+        const row = db.prepare("SELECT * FROM beehiiv_posts WHERE job_id=? ORDER BY created_at DESC LIMIT 1").get(jobId) as Row | undefined;
+        if (row) return toBeehiivPost(row);
+      } catch {}
+    }
+    return memBeehiivPosts.get(jobId) || null;
+  },
+
+  saveBeehiivPost(post: BeehiivPostRecord): BeehiivPostRecord {
+    const db = getDb();
+    const statsJson = post.stats ? JSON.stringify(post.stats) : null;
+    if (db) {
+      try {
+        db.prepare(
+          `INSERT INTO beehiiv_posts (id,job_id,draft_id,publication_id,status,title,subtitle,web_url,preview_url,scheduled_at,stats_json,created_at,updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(id) DO UPDATE SET
+             status=excluded.status,
+             title=COALESCE(excluded.title, beehiiv_posts.title),
+             subtitle=COALESCE(excluded.subtitle, beehiiv_posts.subtitle),
+             web_url=COALESCE(excluded.web_url, beehiiv_posts.web_url),
+             preview_url=COALESCE(excluded.preview_url, beehiiv_posts.preview_url),
+             scheduled_at=excluded.scheduled_at,
+             stats_json=COALESCE(excluded.stats_json, beehiiv_posts.stats_json),
+             updated_at=excluded.updated_at`
+        ).run(
+          post.id,
+          post.jobId,
+          post.draftId ?? null,
+          post.publicationId,
+          post.status,
+          post.title ?? null,
+          post.subtitle ?? null,
+          post.webUrl ?? null,
+          post.previewUrl ?? null,
+          post.scheduledAt ?? null,
+          statsJson,
+          post.createdAt,
+          post.updatedAt
+        );
+      } catch (err) {
+        console.warn("[db] saveBeehiivPost sqlite error:", err);
+      }
+    }
+    memBeehiivPosts.set(post.jobId, post);
+
+    if (shouldSyncSupabase()) {
+      void supabaseUpsertBeehiivPost(post);
+    }
+    return post;
+  },
+
   jobDetail(id: string) {
     const job = this.getJob(id);
     if (!job) return null;
+    const beehiivPost = this.getBeehiivPost(id);
     const db = getDb();
     if (db) {
       try {
@@ -565,6 +674,7 @@ export const store = {
           draft: draft || null,
           events,
           email: email ?? (draft ? (memEmailSends.get(draft.id) as any) ?? null : null),
+          beehiivPost,
         };
       } catch {}
     }
@@ -575,6 +685,7 @@ export const store = {
       draft: memDrafts.get(id) || null,
       events: memEvents.get(id) || [],
       email: null,
+      beehiivPost,
     };
   },
 

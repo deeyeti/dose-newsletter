@@ -1,6 +1,8 @@
 import { anthropicKey, env } from "@/lib/env";
 import type { DraftInput } from "@/lib/types";
 
+export const CLAUDE_DEFAULT_MODEL = "claude-opus-5-5";
+
 export const EDITORIAL_SYSTEM_PROMPT = `You are Dose of Society's senior newsletter editor. Turn raw, authentic, street-level human interview transcripts into captivating, deeply moving, and beautifully written newsletter stories that feel like an acclaimed publication (e.g. Substack or The New Yorker human interest column).
 
 Editorial Guidelines:
@@ -45,7 +47,7 @@ function parseDraft(text: string): DraftInput {
 
 export async function generateWithClaude(prompt: string, systemPrompt: string = EDITORIAL_SYSTEM_PROMPT): Promise<string> {
   const key = anthropicKey();
-  const model = env("CLAUDE_MODEL") || "claude-opus-5-5";
+  const model = env("CLAUDE_MODEL") || CLAUDE_DEFAULT_MODEL;
   if (!key) throw new Error("Claude is not configured. Set ANTHROPIC_API_KEY (or local.env claude_api_key).");
   if (!env("CLAUDE_MODEL")) throw new Error("CLAUDE_MODEL is required. Set a model ID available to this Anthropic account, then retry.");
 
@@ -58,14 +60,7 @@ export async function generateWithClaude(prompt: string, systemPrompt: string = 
   if (workspaceId) {
     reqHeaders["anthropic-workspace-id"] = workspaceId;
   }
-
-  const request = {
-    model,
-    max_tokens: 2500,
-    system: systemPrompt,
-    messages: [{ role: "user", content: prompt }],
-  };
-
+  const request = { model, max_tokens: 4096, system: systemPrompt, messages: [{ role: "user", content: prompt }] };
   let lastError: Error | undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
