@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-type Config = { frameio: boolean; groq: boolean; claude: boolean; email: boolean; claudeModel: string | null; transcriptionModel: string };
+type Config = { frameio: boolean; groq: boolean; claude: boolean; email: boolean; beehiiv?: boolean; emailProvider?: string; claudeModel: string | null; transcriptionModel: string };
 type Job = { id: string; filename: string; durationSeconds?: number; status: string; isSample: boolean; createdAt: string; updatedAt?: string; errorMessage?: string; draftSubject?: string; recipientEmail?: string };
 type Detail = { job: Job; transcript: { text: string; model: string } | null; draft: Draft | null; events: { status: string; message: string; created_at: string }[]; email: unknown };
 type Draft = { id?: string; subject: string; previewText: string; headline: string; body: string; closing?: string; recipientEmail?: string; status: string; updatedAt?: string };
@@ -95,6 +95,10 @@ const i18n = {
     confirmClearSamples: "Are you sure you want to delete all sample videos?",
     videoDeleted: "Video removed.",
     samplesCleared: "All sample videos removed.",
+    pushBeehiiv: "Push to Beehiiv",
+    pushingBeehiiv: "Pushing to Beehiiv…",
+    beehiivSuccess: "Draft created in Beehiiv!",
+    viewOnBeehiiv: "View on Beehiiv ↗",
   },
   ar: {
     brand: "Dose Engine",
@@ -180,6 +184,10 @@ const i18n = {
     confirmClearSamples: "هل أنت متأكد من حذف جميع الفيديوهات النموذجية؟",
     videoDeleted: "تم حذف الفيديو.",
     samplesCleared: "تم حذف جميع العينات.",
+    pushBeehiiv: "إرسال إلى Beehiiv",
+    pushingBeehiiv: "جاري الإرسال إلى Beehiiv…",
+    beehiivSuccess: "تم إنشاء المسودة في Beehiiv!",
+    viewOnBeehiiv: "عرض على Beehiiv ↗",
   },
 } as const;
 
@@ -302,6 +310,7 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
     ["Groq", config?.groq],
     ["Claude", config?.claude],
     ["Email", config?.email],
+    ["Beehiiv", config?.beehiiv],
   ];
 
   const sentJobs = jobs.filter((j) => j.status === "sent");
@@ -491,6 +500,7 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
             setNotice={setNotice}
             t={t}
             lang={lang}
+            beehiivConfigured={Boolean(config?.beehiiv)}
           />
         </>
       )}
@@ -500,7 +510,7 @@ export function Dashboard({ initialConfig }: { initialConfig?: Config | null } =
 
 // ─── Job Panel ───────────────────────────────────────────────────────────────
 function JobPanel({
-  detail, close, refresh, onDelete, setNotice, t, lang,
+  detail, close, refresh, onDelete, setNotice, t, lang, beehiivConfigured,
 }: {
   detail: Detail;
   close: () => void;
@@ -509,6 +519,7 @@ function JobPanel({
   setNotice: (v: string) => void;
   t: typeof i18n[Lang];
   lang: Lang;
+  beehiivConfigured?: boolean;
 }) {
   const [prevRemoteDraft, setPrevRemoteDraft] = useState<Draft | null>(detail.draft);
   const [draft, setDraft] = useState<Draft | null>(detail.draft);
@@ -593,6 +604,39 @@ function JobPanel({
       setNotice(msg);
     } finally {
       setSaving(false);
+    }
+  }
+
+  const [pushingBeehiiv, setPushingBeehiiv] = useState(false);
+  const [beehiivPost, setBeehiivPost] = useState<{ id: string; previewUrl?: string; webUrl?: string } | null>(null);
+
+  async function pushToBeehiiv() {
+    if (!draft) return;
+    setPushingBeehiiv(true);
+    setPanelNotice("");
+    try {
+      const res = await fetch(`/api/jobs/${detail.job.id}/beehiiv`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ draft, status: "draft" }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setPanelNotice(data.error);
+        setNotice(data.error);
+      } else {
+        setBeehiivPost({ id: data.postId, previewUrl: data.previewUrl, webUrl: data.webUrl });
+        const successMsg = `${t.beehiivSuccess} (ID: ${data.postId})`;
+        setPanelNotice(successMsg);
+        setNotice(successMsg);
+        refresh();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to push to Beehiiv.";
+      setPanelNotice(msg);
+      setNotice(msg);
+    } finally {
+      setPushingBeehiiv(false);
     }
   }
 
@@ -832,14 +876,33 @@ function JobPanel({
             )}
 
             {/* Actions */}
-            <div className="editor-actions">
+            <div className="editor-actions" style={{ flexWrap: "wrap", gap: 8 }}>
               <button className="btn btn-ghost" disabled={saving || draft.status === "sent"} onClick={() => void save()}>
                 {saving ? t.saving : t.saveDraft}
               </button>
+              {beehiivConfigured && (
+                <button
+                  type="button"
+                  className="btn btn-subtle"
+                  disabled={pushingBeehiiv}
+                  onClick={() => void pushToBeehiiv()}
+                  title="Push draft to Beehiiv publication"
+                >
+                  {pushingBeehiiv ? t.pushingBeehiiv : `✦ ${t.pushBeehiiv}`}
+                </button>
+              )}
               <button className="btn btn-primary" disabled={draft.status === "sent"} onClick={() => setConfirming(true)}>
                 {draft.status === "sent" ? t.sent : t.sendNewsletter}
               </button>
             </div>
+            {beehiivPost?.previewUrl && (
+              <div style={{ marginTop: 12, padding: "8px 14px", background: "var(--brand-bg, #fff0f0)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 13, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>✓ {t.beehiivSuccess}</span>
+                <a href={beehiivPost.previewUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--brand)", fontWeight: 600, textDecoration: "underline" }}>
+                  {t.viewOnBeehiiv}
+                </a>
+              </div>
+            )}
           </section>
         ) : (
           <section className="waiting">

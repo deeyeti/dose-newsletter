@@ -28,15 +28,19 @@ export function publicConfiguration() {
   const hasClaude = Boolean(anthropicKey());
   const hasFrameio = Boolean(env("FRAMEIO_ACCESS_TOKEN") && env("FRAMEIO_ACCOUNT_ID"));
   const hasGroq = Boolean(env("GROQ_API_KEY"));
+  const hasBeehiiv = Boolean(env("BEEHIIV_API_KEY"));
+  const emailProvider = env("EMAIL_PROVIDER") || "resend";
   const hasEmail = Boolean(
-    (env("EMAIL_API_KEY") || env("RESEND_API_KEY") || env("resend_api_key")) &&
-    (env("EMAIL_PROVIDER") || "resend") === "resend"
+    ((env("EMAIL_API_KEY") || env("RESEND_API_KEY") || env("resend_api_key")) && emailProvider === "resend") ||
+    (emailProvider === "beehiiv" && hasBeehiiv)
   );
   return {
     frameio: hasFrameio,
     groq: hasGroq,
     claude: hasClaude,
     email: hasEmail,
+    beehiiv: hasBeehiiv,
+    emailProvider,
     claudeModel: env("CLAUDE_MODEL") || "claude-opus-5-5",
     transcriptionModel: env("GROQ_TRANSCRIPTION_MODEL") || "whisper-large-v3-turbo",
     activeProvider: "Claude"
